@@ -87,10 +87,14 @@ def _float_column(rows: list[dict[str, str]], key: str) -> np.ndarray:
 
 
 def load_afl(*, as_frame: bool = True) -> Any:
-    """Load AFL match results and betting odds, 2009-06-19 to 2022-04-10.
+    """Load AFL match results and betting odds, 2009-06-19 to 2026-08-02.
 
-    2534 matches between 18 teams, sorted chronologically.  Sourced from
+    3533 matches between 18 teams, sorted chronologically.  Sourced from
     https://www.aussportsbetting.com/historical_data/afl.xlsx.
+
+    Venue names carry the sponsor in use at the time the archive was published,
+    not at the time of the match, so a ground may appear under one name across
+    its whole history.
 
     Parameters
     ----------
@@ -107,7 +111,7 @@ def load_afl(*, as_frame: bool = True) -> Any:
     >>> from bscores.datasets import load_afl
     >>> matches = load_afl(as_frame=False)
     >>> len(matches)
-    2534
+    3533
     """
     if as_frame:
         import pandas as pd

@@ -1,6 +1,6 @@
 """B-score diagnostics on the AFL archive.
 
-Runs the paper's evaluation protocol over 2534 AFL matches (2009-2022): ratings,
+Runs the paper's evaluation protocol over 3533 AFL matches (2009-2026): ratings,
 an out-of-sample forecast comparison against Elo and the home-ground base rate, a
 Diebold-Mariano test on the loss differences, and the betting ROI surface from
 Definition 1.

@@ -129,14 +129,14 @@ search = grid_search(
         "weights": ["mov"],
     },
     weight_options=options,
-    validation_start="2016-01-01", validation_end="2019-01-01",   # tune here
+    validation_start="2019-01-01", validation_end="2023-01-01",   # tune here
 )
 search.best_params            # {'alpha': 120.0, 'kernel': 'exponential', ...}
 search.sensitivity("alpha")   # how much does this knob actually matter?
 
 held_out = refit_best(        # ... report on a window the search never saw
     afl.home_team, afl.away_team, afl.outcome, afl.date,
-    search.best_params, weight_options=options, test_start="2019-01-01",
+    search.best_params, weight_options=options, test_start="2023-01-01",
 )
 ```
 
@@ -144,9 +144,9 @@ The three-way split is the point. Tuning and reporting on the same matches
 inflates the result by however hard you searched:
 
 ```
-2009-06 .. 2015-12   warm-up      1301 matches, the model builds a history
-2016-01 .. 2018-12   validation    621 matches, the search runs here
-2019-01 .. 2022-04   test          612 matches, reported once at the end
+2009-06 .. 2018-09   warm-up      1922 matches, the model builds a history
+2019-03 .. 2022-09   validation    783 matches, the search runs here
+2023-03 .. 2026-08   test          828 matches, reported once at the end
 ```
 
 Configurations that differ only in how the logit is fitted share one causal
@@ -154,56 +154,67 @@ rating pass, so a 480-point grid costs 120 sweeps, not 480.
 
 ## What the sweep found on AFL
 
-`python examples/afl_tuning.py`. Scored on the held-out 2019–2022 window:
+`python examples/afl_tuning.py`. Scored on the held-out 2023–2026 window,
+828 matches:
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| B-score, tuned | **0.6358** | **0.2200** | **0.6503** |
-| B-score, paper defaults (α = 365, hyperbolic) | 0.6735 | 0.2386 | 0.5605 |
-| Elo (Kovalchik K-schedule) | 0.6729 | 0.2373 | 0.5931 |
-| home-ground base rate | 0.6872 | 0.2450 | 0.5523 |
+| B-score, tuned | **0.5853** | **0.1993** | **0.6703** |
+| Elo (Kovalchik K-schedule) | 0.6012 | 0.2062 | 0.6570 |
+| B-score, paper defaults (α = 365, hyperbolic) | 0.6348 | 0.2201 | 0.6244 |
+| home-ground base rate | 0.6808 | 0.2417 | 0.5749 |
 
-Diebold-Mariano against the tuned model: −3.08 vs the paper's defaults
-(p = 0.002), −3.00 vs Elo (p = 0.003). The winning configuration:
+Diebold-Mariano against the tuned model: −5.24 vs the paper's defaults
+(p < 0.0001), −1.98 vs Elo (p = 0.048). The winning configuration:
 
 ```python
 {"alpha": 120.0, "kernel": "exponential", "transform": "sqrt",
  "regularization": 0.03, "weights": "mov"}      # bscores.tuning.AFL_TUNED
 ```
 
+An earlier search on the shorter 2009–2022 archive, validating on 2016–2018
+instead, picked **exactly these values** — replicated on disjoint validation
+windows, not fitted to one.
+
 Which knobs actually mattered, by best achievable validation log-loss:
 
 | knob | best | worst tried | verdict |
 | --- | ---: | ---: | --- |
-| `alpha` | 0.5856 @ 120 d | 0.6734 @ 3650 d | dominant — always tune it |
-| `kernel` | 0.5971 exponential | 0.6070 hyperbolic | worth switching |
-| `weights` | 0.5879 margin-linear | 0.5978 finals-weighted | second-biggest lever |
-| `transform` | 0.5879 sqrt | 0.5939 identity | small but free |
-| `regularization` | 0.5856 @ 0.03 | 0.5871 @ 0 | marginal |
-| `draw_weight` | 0.5879 @ 0.5 | 0.5881 @ 0 | noise — leave it |
-| `symmetric` | 0.5879 True | 0.5883 False | noise — leave it |
-| `refit_every` | 0.5971 @ 300 | 0.5977 @ 100 | noise — leave it |
+| `alpha` | 0.6246 @ 120 d | 0.6773 @ 3650 d | dominant — always tune it |
+| `weights` | 0.6191 margin-linear | 0.6282 finals-weighted | second-biggest lever |
+| `kernel` | 0.6246 exponential | 0.6352 hyperbolic | worth switching |
+| `transform` | 0.6246 sqrt | 0.6274 log | small but free |
+| `regularization` | 0.6177 @ 0.03 | 0.6191 @ 0 | marginal |
+| `draw_weight` | 0.6191 @ 0.5 | 0.6192 @ 1.0 | noise — leave it |
+| `symmetric` | 0.6191 False | 0.6194 True | noise — leave it |
+| `refit_every` | 0.6241 @ 828 | 0.6246 @ 300 | noise — leave it |
 
-Three findings worth stating plainly:
+Four findings worth stating plainly:
+
+- **Untuned, the method loses to Elo on this data.** At the paper's defaults
+  B-scores score 0.6348 against Elo's 0.6012 — a clear loss, not a tie. Tuned,
+  they win. That gap is the entire argument for `bscores.tuning`, and it is why
+  the library ships a search rather than a recommended `alpha`.
 
 - **The hyperbolic kernel's problem is its tail, not its shape.** At α = 365 a
   decade-old result still carries weight 0.09, and there are thousands of them.
-  Capping it — `Hyperbolic(120)` with `max_age=365` — scores 0.5973, matching the
-  exponential kernel's 0.5971. Either fix works; doing neither costs a full
-  0.01 of log-loss.
+  Capping it — `Hyperbolic(60)` with `max_age=730` — scores 0.6232 against the
+  best uncapped hyperbolic's 0.6357 and the exponential kernel's 0.6246. Either
+  fix works; doing neither costs 0.0125 of log-loss.
 - **Margin of victory is worth as much as the kernel choice.** A 100-point
   thrashing says more than a one-point escape, and `bscores.weights.margin_weight`
   is the cheapest accuracy on offer.
-- **The betting result does not replicate.** Applying Definition 1's staking rule
-  to the bundled closing odds gives a negative ROI at every threshold tested
-  (−3.5% to −5.8% for the tuned model, −0.7% to −4.7% at the paper's defaults).
-  The paper's positive returns were on tennis markets; the AFL head-to-head
-  market in this sample is not beatable this way, and tuning the model for
-  accuracy made the betting result *worse*, not better.
+- **The betting result still does not replicate.** Applying Definition 1's
+  staking rule to the bundled closing odds over the test window gives −4.8% to
+  −2.1% ROI at every threshold from 0.55 to 0.70. The most selective cell
+  (r = 0.75) comes out at +0.8%, but on 236 bets that is t = 0.31, 95% CI
+  [−4.3%, +5.8%] — noise, not an edge. Better forecasts did not become a
+  profitable strategy against a market that already prices them in.
 
-Test-window log-loss is worse than validation-window log-loss for *every* model:
-2019–2022 was simply less predictable. Only the gaps within a window mean
-anything.
+The tuned model scores 0.6177 on validation and 0.5853 on test — *better* out of
+sample, because 2023–2026 happened to be a more predictable stretch than
+2019–2022, not because the model improved. Only the gaps between models within
+one window mean anything.
 
 ## Exploring ratings
 
@@ -226,7 +237,7 @@ for part in explain_rating(model, "Melbourne", top=3):
 from bscores.diagnostics import network_summary
 network_summary(model)
 # {'competitors': 18, 'arcs': 306, 'density': 1.0, 'has_cycle': True,
-#  'spectral_radius': 7.47, 'unrated': 0, 'solver': 'power', ...}
+#  'spectral_radius': 12.70, 'unrated': 0, 'solver': 'power', ...}
 ```
 
 **Are the probabilities honest?** `calibration_curve`, `reliability_table`,
@@ -235,7 +246,7 @@ predicting the base rate; sharpness is the other half of the picture.
 
 **How much does the order churn?** `rating_churn` — a short memory tracks form
 and churns, a long one is steadier. On AFL, mean rank change per match day is
-0.96 at a 30-day half-life, 0.43 at 120 days and 0.12 at 1095.
+0.95 at a 30-day half-life, 0.42 at 120 days and 0.10 at 1095.
 
 **What are our chances?** `simulate_season` plays the remaining fixtures a few
 thousand times:
@@ -243,7 +254,7 @@ thousand times:
 ```python
 from bscores.simulation import simulate_season
 season = simulate_season(model, home_fixtures, away_fixtures, n_simulations=20_000)
-season.top_n_probability(4)      # {'Melbourne': 0.848, 'Sydney': 0.622, ...}
+season.top_n_probability(4)      # {'Fremantle': 0.88, 'Geelong': 0.72, ...}
 season.position_distribution("Geelong")
 ```
 
@@ -268,7 +279,7 @@ optional `ax` and returns it, so they compose into a dashboard.
 | `bscores.simulation` | `simulate_season` |
 | `bscores.plotting` | matplotlib figures (optional extra) |
 | `bscores.baselines` | `Elo` (Eqs. 4–5), for comparison |
-| `bscores.datasets` | `load_afl` — 2534 AFL matches, bundled |
+| `bscores.datasets` | `load_afl` — 3533 AFL matches, 2009–2026, bundled |
 
 ## Design notes
 
@@ -300,8 +311,8 @@ eigenvector throughout.
 | 256 | 50 000 | 3 650 | 6.5 |
 
 An epoch is one distinct match date, and one centrality solve. The full AFL
-back-test — 2534 matches, ~1400 causal solves, five logit refits — runs in about
-half a second. What makes that work:
+back-test — 3533 matches, ~2000 causal solves, six logit refits — runs in about
+three quarters of a second. What makes that work:
 
 - $W_t$ is assembled with a scatter-add over a pre-sorted event array, so an
   epoch costs one pass over history rather than a Python loop over it.
@@ -320,7 +331,7 @@ half a second. What makes that work:
 
 ```bash
 pip install -e ".[dev]"
-pytest                                    # 474 tests, ~25s
+pytest                                    # 475 tests, ~35s
 ruff check src tests scripts examples
 python examples/afl_tuning.py             # hyperparameter search
 python examples/afl_diagnostics.py        # ratings, forecasts, ROI

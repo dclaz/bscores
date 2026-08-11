@@ -7,7 +7,7 @@ import pytest
 
 from bscores.datasets import MatchData, afl_data_path, load_afl
 
-EXPECTED_MATCHES = 2534
+EXPECTED_MATCHES = 3533
 EXPECTED_TEAMS = 18
 EXPECTED_COLUMNS = [
     "date",
@@ -37,7 +37,7 @@ class TestNumpyLoader:
 
     def test_date_range(self, matches):
         assert str(matches.date.min()) == "2009-06-19"
-        assert str(matches.date.max()) == "2022-04-10"
+        assert str(matches.date.max()) == "2026-08-02"
 
     def test_chronological(self, matches):
         assert np.all(np.diff(matches.date_time.astype("int64")) >= 0)
@@ -54,7 +54,7 @@ class TestNumpyLoader:
         )
 
     def test_draws_are_scored_as_a_half(self, matches):
-        assert int((matches.outcome == 0.5).sum()) == 22
+        assert int((matches.outcome == 0.5).sum()) == 30
 
     def test_home_advantage_is_visible(self, matches):
         assert 0.5 < matches.outcome.mean() < 0.62
@@ -63,7 +63,7 @@ class TestNumpyLoader:
         assert not np.any(matches.home_team == matches.away_team)
 
     def test_finals_are_flagged(self, matches):
-        assert int(matches.final.sum()) == 109
+        assert int(matches.final.sum()) == 145
 
     def test_odds_are_present_and_plausible(self, matches):
         # One 2012 fixture is quoted at a flat 1.00; everything else clears it.
@@ -75,7 +75,7 @@ class TestNumpyLoader:
         assert implied.mean() > 1.0
 
     def test_repr(self, matches):
-        assert "2534 matches" in repr(matches)
+        assert "3533 matches" in repr(matches)
 
 
 class TestPandasLoader:

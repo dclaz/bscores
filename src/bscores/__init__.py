@@ -56,7 +56,7 @@ Where things live
 :mod:`bscores.simulation` Monte Carlo season outcomes
 :mod:`bscores.plotting`  matplotlib figures (optional extra)
 :mod:`bscores.baselines` ``Elo``, for comparison
-:mod:`bscores.datasets`  ``load_afl`` — 2534 AFL matches, bundled
+:mod:`bscores.datasets`  ``load_afl`` — 3533 AFL matches, bundled
 ======================== ====================================================
 """
 

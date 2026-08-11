@@ -35,7 +35,7 @@ from bscores.simulation import simulate_season
 from bscores.tuning import AFL_TUNED
 from bscores.weights import margin_weight
 
-TEST_START = "2019-01-01"
+TEST_START = "2023-01-01"
 
 
 def rule(title: str) -> None:

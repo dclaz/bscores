@@ -6,9 +6,9 @@ window that the search never saw.
 
 .. code-block:: text
 
-    2009-06 .. 2015-12   warm-up      1301 matches, model builds a history
-    2016-01 .. 2018-12   validation    621 matches, the search runs here
-    2019-01 .. 2022-04   test          612 matches, reported once at the end
+    2009-06 .. 2018-09   warm-up      1922 matches, model builds a history
+    2019-03 .. 2022-09   validation    783 matches, the search runs here
+    2023-03 .. 2026-08   test          828 matches, reported once at the end
 
 Usage::
 
@@ -28,8 +28,8 @@ from bscores.metrics import diebold_mariano
 from bscores.tuning import grid_search, refit_best
 from bscores.weights import importance_weight, margin_weight
 
-VALIDATION_START = "2016-01-01"
-TEST_START = "2019-01-01"
+VALIDATION_START = "2019-01-01"
+TEST_START = "2023-01-01"
 
 
 def rule(title: str) -> None:
@@ -121,18 +121,47 @@ def stage_three(matches) -> None:
         matches,
         {
             "alpha": [21.0, 60.0, 120.0, 240.0],
-            "kernel": ["hyperbolic"],
+            "kernel": ["hyperbolic", "exponential"],
             "transform": ["sqrt"],
             "max_age": [None, 365.0, 730.0, 1460.0],
         },
     )
-    print("  best hyperbolic configuration when the tail is truncated:")
-    show(result, ("alpha", "max_age"), n=4)
-    print(
-        "\n  A hyperbolic kernel capped at one year matches the exponential one.\n"
-        "  The heavy tail is the whole difference: with no cut-off, a decade of\n"
-        "  stale results still carries weight, and there are thousands of them."
+
+    def best(**match):
+        rows = [
+            row
+            for row in result.rows
+            if all(row[key] == value for key, value in match.items())
+        ]
+        return min(rows, key=lambda row: row["log_loss"])
+
+    uncapped = best(kernel="hyperbolic", max_age=None)
+    capped = min(
+        (row for row in result.rows if row["kernel"] == "hyperbolic" and row["max_age"]),
+        key=lambda row: row["log_loss"],
     )
+    exponential = best(kernel="exponential", max_age=None)
+
+    print(f"  {'configuration':<44}{'log-loss':>10}")
+    for label, row in (
+        (f"hyperbolic, no cut-off (alpha={row_alpha(uncapped)})", uncapped),
+        (f"hyperbolic, max_age={capped['max_age']:.0f} (alpha={row_alpha(capped)})", capped),
+        (f"exponential, no cut-off (alpha={row_alpha(exponential)})", exponential),
+    ):
+        print(f"  {label:<44}{row['log_loss']:>10.4f}")
+
+    print(
+        f"\n  Truncating the tail is worth "
+        f"{uncapped['log_loss'] - capped['log_loss']:.4f} of log-loss to the\n"
+        f"  hyperbolic kernel, taking it to within "
+        f"{abs(capped['log_loss'] - exponential['log_loss']):.4f} of the exponential\n"
+        "  one.  The heavy tail is the whole difference: with no cut-off a decade\n"
+        "  of stale results still carries weight, and an archive holds thousands."
+    )
+
+
+def row_alpha(row) -> str:
+    return f"{row['alpha']:.0f}"
 
 
 def final(matches) -> dict:
@@ -211,10 +240,15 @@ def final(matches) -> dict:
         statistic, p_value = diebold_mariano(tuned_loss, other)
         print(f"    vs {name:<18} DM = {statistic:>7.3f}   p = {p_value:.4f}")
 
+    validation_score = result.best_score
+    test_score = tuned.metrics()["log_loss"]
+    direction = "better" if test_score < validation_score else "worse"
     print(
-        "\n  The test log-loss is worse than the validation log-loss for every\n"
-        "  model, tuned or not: 2019-2022 was simply a less predictable stretch.\n"
-        "  Only the gaps between models on this window mean anything."
+        f"\n  The tuned model scores {validation_score:.4f} on validation and "
+        f"{test_score:.4f} on test —\n"
+        f"  {direction} out of sample, because the two windows differ in how\n"
+        "  predictable they happened to be, not because the model changed.\n"
+        "  Only the gaps between models within one window mean anything."
     )
     return chosen
 

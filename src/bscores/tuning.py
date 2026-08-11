@@ -68,11 +68,16 @@ DEFAULT_GRID: dict[str, list[Any]] = {
 
 #: Settings chosen by ``python examples/afl_tuning.py`` on the bundled AFL data.
 #:
-#: Selected on 2016-2018 and then scored once on 2019-2022, where they reach a
-#: 0.636 log-loss against 0.673 for the paper's ``alpha=365`` hyperbolic default
-#: and 0.673 for Elo.  Sport-specific — treat it as a worked example of what
-#: :func:`grid_search` produces, not as a default for your own competition.  The
-#: ``"weights"`` entry names a margin-of-victory vector; build it with
+#: Selected on 2019-2022 (783 matches) and then scored once on 2023-2026 (828
+#: matches), where they reach a 0.585 log-loss against 0.635 for the paper's
+#: ``alpha=365`` hyperbolic default and 0.601 for Elo (Diebold-Mariano -5.24 and
+#: -1.98).  An earlier search on the shorter 2009-2022 archive, validating on
+#: 2016-2018 instead, picked exactly these values — so they are replicated on
+#: disjoint validation windows, not fitted to one.
+#:
+#: Still sport-specific: treat it as a worked example of what :func:`grid_search`
+#: produces, not as a default for your own competition.  The ``"weights"`` entry
+#: names a margin-of-victory vector; build it with
 #: ``bscores.weights.margin_weight(margin, scheme="linear", scale=24.0, cap=3.0)``.
 AFL_TUNED: dict[str, Any] = {
     "alpha": 120.0,
