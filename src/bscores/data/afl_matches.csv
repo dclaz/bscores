@@ -578,7 +578,7 @@ date,date_time,season,round,home_team,away_team,venue,home_score,away_score,marg
 2012-06-22,2012-06-22 19:50:00,2012,12,Sydney,Geelong,SCG,80,74,6,1.0,False,1.6,2.3
 2012-06-23,2012-06-23 13:40:00,2012,13,Western Bulldogs,Brisbane,Marvel Stadium,56,114,-58,0.0,False,1.36,3.09
 2012-06-23,2012-06-23 16:40:00,2012,13,Collingwood,West Coast,MCG,85,82,3,1.0,False,1.4,2.91
-2012-06-23,2012-06-23 17:40:00,2012,12,Fremantle,Essendon,Domain Stadium,89,113,-24,0.0,False,2.2,1.65
+2012-06-23,2012-06-23 17:40:00,2012,13,Fremantle,Essendon,Domain Stadium,89,113,-24,0.0,False,2.2,1.65
 2012-06-24,2012-06-24 15:15:00,2012,13,Melbourne,GWS Giants,MCG,135,57,78,1.0,False,1.28,3.67
 2012-06-24,2012-06-24 16:40:00,2012,13,North Melbourne,Adelaide,Marvel Stadium,121,89,32,1.0,False,3.12,1.35
 2012-06-29,2012-06-29 19:50:00,2012,13,Carlton,Hawthorn,MCG,70,120,-50,0.0,False,3.43,1.3
@@ -3489,7 +3489,7 @@ date,date_time,season,round,home_team,away_team,venue,home_score,away_score,marg
 2026-06-28,2026-06-28 15:15:00,2026,17,North Melbourne,Essendon,Marvel Stadium,79,65,14,1.0,False,1.46,2.8
 2026-07-02,2026-07-02 19:30:00,2026,17,Geelong,Brisbane,GMHBA Stadium,101,123,-22,0.0,False,1.45,2.75
 2026-07-03,2026-07-03 18:10:00,2026,18,West Coast,Adelaide,Optus Stadium,74,99,-25,0.0,False,4.6,1.21
-2026-07-03,2026-07-03 19:40:00,2026,18,Sydney,Western Bulldogs,SCG,90,55,35,1.0,False,1.45,2.85
+2026-07-03,2026-07-03 19:40:00,2026,17,Sydney,Western Bulldogs,SCG,90,55,35,1.0,False,1.45,2.85
 2026-07-04,2026-07-04 13:15:00,2026,18,Hawthorn,Melbourne,UTAS Stadium,90,125,-35,0.0,False,1.42,2.9
 2026-07-04,2026-07-04 13:35:00,2026,18,GWS Giants,Fremantle,Manuka Oval,109,88,21,1.0,False,4.0,1.25
 2026-07-04,2026-07-04 16:15:00,2026,18,Gold Coast,Collingwood,People First Stadium,98,104,-6,0.0,False,1.68,2.23

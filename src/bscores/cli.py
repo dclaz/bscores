@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -431,6 +432,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ValueError, KeyError) as error:
         print(f"bscores: {error}", file=sys.stderr)
         return 2
+    except BrokenPipeError:
+        # `bscores rate ... | head` closes the pipe early.  Redirect stdout to
+        # devnull so the interpreter's shutdown flush has somewhere to go and
+        # does not print a traceback over the user's output.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return 0
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised via __main__.py

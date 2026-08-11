@@ -46,6 +46,10 @@ model.leaderboard(top=3)
 model.predict_win([["Fremantle"], ["Richmond"]])    # [0.944, 0.056]
 ```
 
+New to the method? **[TUTORIAL.md](TUTORIAL.md)** walks through the whole
+package end to end — rating, forecasting, tuning, diagnostics and every plot —
+against the bundled data.
+
 ---
 
 ## The idea in more detail
@@ -463,7 +467,8 @@ python examples/afl_explore.py --plot out/
 python scripts/build_afl_dataset.py       # rebuild the bundled data
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the conventions worth knowing, and
+See [TUTORIAL.md](TUTORIAL.md) for a guided tour of the API,
+[CONTRIBUTING.md](CONTRIBUTING.md) for the conventions worth knowing, and
 [CHANGELOG.md](CHANGELOG.md) for what has changed.
 
 ## Licence

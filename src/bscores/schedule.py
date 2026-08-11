@@ -87,8 +87,12 @@ def infer_rounds(
     home, away
         Competitor names for each match.
     times
-        Match times.  Matches are processed in time order regardless of the
-        order they are passed in.
+        Match times.  Matches are processed in time order.  Matches sharing a
+        timestamp — which is most of them, when the clock is day-resolution —
+        are ordered by competitor name, so the answer depends only on the *set*
+        of matches and not on the order they happen to be passed in.  Pass a
+        finer clock (kick-off times rather than dates) when you have one and
+        the real playing order matters.
     season
         Pre-computed season labels; inferred with :func:`infer_seasons` when
         omitted.
@@ -126,7 +130,13 @@ def infer_rounds(
         raise ValueError(f"season length mismatch: {labels.size} vs {stamps.size}")
 
     rounds = np.zeros(stamps.size, dtype=np.int64)
-    order = np.lexsort((stamps, labels))
+    # Same-timestamp matches must be walked in a defined order, or the greedy
+    # boundary below lands differently depending on how the caller happened to
+    # sort its rows.  Break those ties on the competitor names: arbitrary, but a
+    # property of the match rather than of the row it arrived in.
+    order = np.lexsort(
+        (np.asarray(away_names, dtype=object), np.asarray(home_names, dtype=object), stamps, labels)
+    )
     current_season: Any = None
     number = 0
     playing: set[str] = set()

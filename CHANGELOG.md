@@ -22,6 +22,21 @@ All notable changes to this project are documented here. The format follows
   bundled archive or any CSV, and emits text or JSON.
 - `mypy` and coverage configuration, and a release workflow that publishes to
   PyPI on a tag.
+- `TUTORIAL.md`: a guided tour of the whole package, with every output and
+  figure generated from the bundled data.
+
+### Fixed
+
+- `infer_rounds` returned different round numbers depending on the order
+  matches were passed in, because same-day matches — most of them, at day
+  resolution — were walked in row order. Ties are now broken on competitor
+  name, so the result depends only on the set of matches. The bundled `round`
+  column shifted for 4 of 3533 matches and is now exactly reproducible.
+- `plot_tuning` drew categorical parameters as bars from zero, which hid
+  differences of a fraction of a percent — exactly the differences the plot
+  exists to show. It now draws dots on a zoomed axis.
+- The CLI printed a `BrokenPipeError` traceback when its output was piped into
+  a command that exits early, such as `head`.
 
 ## [0.2.0] - 2026-08-11
 

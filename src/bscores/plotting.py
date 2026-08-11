@@ -204,17 +204,35 @@ def plot_tuning(result: Any, key: str = "alpha", *, ax: Any = None, logx: bool =
     values = [v for v, _ in profile]
     scores = [s for _, s in profile]
     numeric = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values)
+    best_value, best_score = min(profile, key=lambda kv: kv[1])
 
     if numeric:
         ax.plot(values, scores, marker="o")
         if logx and min(values) > 0:
             ax.set_xscale("log")
+        ax.axhline(best_score, linestyle="--", linewidth=1, color="0.6")
+        ax.set_xlabel(key)
     else:
-        ax.bar([str(v) for v in values], scores)
-    best_value, best_score = min(profile, key=lambda kv: kv[1])
-    ax.axhline(best_score, linestyle="--", linewidth=1, color="0.6")
-    ax.set_xlabel(key)
-    ax.set_ylabel(f"best {result.metric}")
+        # Deliberately not a bar chart.  The differences that matter here are a
+        # fraction of a percent of the score, so bars drawn from zero hide the
+        # entire result — and bars drawn from a truncated axis misrepresent the
+        # ratio between them.  Dots on a zoomed axis do neither.
+        labels = [str(v) for v in values]
+        positions = np.arange(len(labels))
+        ax.hlines(positions, best_score, scores, color="0.8", linewidth=2, zorder=1)
+        ax.scatter(scores, positions, zorder=2)
+        ax.axvline(best_score, linestyle="--", linewidth=1, color="0.6")
+        ax.set_yticks(positions)
+        ax.set_yticklabels(labels)
+        ax.invert_yaxis()
+        ax.set_ylabel(key)
+        ax.set_xlabel(f"best {result.metric}")
+        spread = max(scores) - min(scores)
+        pad = spread * 0.25 if spread > 0 else max(abs(best_score) * 0.01, 1e-6)
+        ax.set_xlim(min(scores) - pad, max(scores) + pad)
+
+    if numeric:
+        ax.set_ylabel(f"best {result.metric}")
     ax.set_title(f"{result.metric} against {key} (best: {best_value})")
     return ax
 

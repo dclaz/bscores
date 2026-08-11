@@ -134,7 +134,7 @@ class TestPlotTuning:
         assert len(ax.get_lines()) >= 1
         assert ax.get_xscale() == "log"
 
-    def test_categorical_parameter_gets_bars(self, fixtures):
+    def test_categorical_parameter_gets_one_point_per_value(self, fixtures):
         home, away, outcome, times = fixtures
         search = grid_search(
             home, away, outcome, times,
@@ -142,7 +142,23 @@ class TestPlotTuning:
             validation_start=0.4,
         )
         ax = plot_tuning(search, "transform")
-        assert len(ax.patches) == 3
+        assert len(ax.collections[-1].get_offsets()) == 3
+        assert [t.get_text() for t in ax.get_yticklabels()] == ["identity", "log", "sqrt"]
+
+    def test_categorical_axis_is_zoomed_so_differences_are_visible(self, fixtures):
+        # Scores differ in the third decimal; an axis anchored at zero would
+        # render every value as the same point.
+        home, away, outcome, times = fixtures
+        search = grid_search(
+            home, away, outcome, times,
+            grid={"alpha": [100.0], "transform": ["identity", "log", "sqrt"]},
+            validation_start=0.4,
+        )
+        ax = plot_tuning(search, "transform")
+        scores = [s for _, s in search.sensitivity("transform")]
+        low, high = ax.get_xlim()
+        assert low > 0.0
+        assert (high - low) < 4 * (max(scores) - min(scores))
 
     def test_linear_axis_on_request(self, fixtures):
         home, away, outcome, times = fixtures
