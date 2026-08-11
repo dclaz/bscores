@@ -52,6 +52,7 @@ Where things live
 :mod:`bscores.metrics`   log-loss, Brier, Diebold-Mariano, betting ROI
 :mod:`bscores.backtest`  ``rolling_forecast`` — expanding-window evaluation
 :mod:`bscores.tuning`    ``grid_search`` over a validation window
+:mod:`bscores.search`    ``optuna_search`` over a conditional space (optional)
 :mod:`bscores.diagnostics` explain a rating, check calibration, inspect the network
 :mod:`bscores.simulation` Monte Carlo season outcomes
 :mod:`bscores.plotting`  matplotlib figures (optional extra)

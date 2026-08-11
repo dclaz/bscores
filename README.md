@@ -283,21 +283,30 @@ differ). `--format json` on any subcommand gives machine-readable output.
 
 ## A worked example, end to end
 
-`python examples/afl_tuning.py` runs the search above on the bundled AFL
-archive and scores the winner once on 2023–2026:
+`python examples/afl_tuning.py` runs the grid search above, and
+`python examples/afl_optuna.py` runs a Bayesian one over a richer space. Both
+score their winner once on 2023–2026:
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| Elo, tuned (home advantage 45, K scale 400, K power 0.4) | **0.5817** | **0.1987** | **0.6848** |
-| B-score, tuned (α = 120, exponential, sqrt, MoV weights) | 0.5853 | 0.1993 | 0.6703 |
+| B-score, TPE-tuned (α = 108, exponential, log, MoV-sqrt) | **0.5765** | **0.1958** | 0.6824 |
+| Elo, TPE-tuned (home advantage 55, K 50, spread 455) | 0.5809 | 0.1985 | **0.6836** |
+| B-score, grid-tuned (α = 120, exponential, sqrt, MoV) | 0.5853 | 0.1993 | 0.6703 |
+| Elo, grid-tuned (home advantage 45, K scale 400, K power 0.4) | 0.5817 | 0.1987 | 0.6848 |
 | Elo, paper defaults (no home advantage, K scale 250) | 0.6012 | 0.2062 | 0.6570 |
 | B-score, paper defaults (α = 365, hyperbolic) | 0.6348 | 0.2201 | 0.6244 |
 | home-ground base rate | 0.6808 | 0.2417 | 0.5749 |
 
-Both tuned models chose their hyperparameters on the 2019–2022 validation
-window and were scored once here. **Tuning matters more than the choice of
-method:** either system, tuned, beats either system's defaults by a wide
-margin, while the gap between the two tuned models is well inside the noise.
+Every tuned row chose its hyperparameters on the 2019–2022 validation window
+and was scored once here. The TPE rows come from `bscores.search`, 600 trials
+each with 120 random warm-up trials, the same sampler on both sides.
+
+**Tuning matters more than the choice of method.** The spread between a tuned
+and an untuned model is 0.02–0.06 of log-loss; the spread between the two tuned
+models is 0.004, and Diebold-Mariano cannot separate them (−0.73, p = 0.47).
+Note also that a richer search space helps the B-score model more than it helps
+Elo — 600 TPE trials moved B-scores from 0.5853 to 0.5765 but Elo only from
+0.5817 to 0.5809, because Elo has three knobs and the B-score model has nine.
 
 The tuned B-score settings —
 
@@ -356,14 +365,15 @@ kernel choice does. `bscores.weights` provides `margin_weight` and
 `importance_weight`; the search treats them as another grid dimension.
 
 **The gains are worth testing for significance.** A Diebold-Mariano test[^dm]
-against the tuned B-score model returns −5.24 versus the paper's B-score
-defaults (p &lt; 0.0001), −1.98 versus a default Elo (p = 0.048), and −7.43
-versus the base rate (p &lt; 0.0001). Against a *tuned* Elo it returns +0.59
-(p = 0.55) — nominally behind, and nowhere near separable on 828 matches.
+against the TPE-tuned B-score model returns −7.43 versus the base rate
+(p &lt; 0.0001) and −5.24 versus the paper's B-score defaults (p &lt; 0.0001) —
+both emphatic. Against a TPE-tuned Elo it returns −0.73 (p = 0.47): nominally
+ahead, nowhere near separable on 828 matches.
 
 So the defensible claim on this data is not that B-scores beat Elo. It is that
 B-scores reach Elo-class accuracy from a completely different construction, and
-that tuning the memory parameter is worth far more than choosing between them.
+that searching the hyperparameters is worth far more than choosing between the
+two methods.
 
 [^dm]: The [Diebold-Mariano test](https://doi.org/10.1080/07350015.1995.10524599)
     asks whether two forecasters differ in accuracy by more than sampling noise.
@@ -401,6 +411,7 @@ throughput.
 | `bscores.metrics` | `log_loss`, `brier_score`, `accuracy`, `diebold_mariano` |
 | `bscores.backtest` | `rolling_forecast`, `walk_forward` |
 | `bscores.tuning` | `grid_search`, `refit_best`, `AFL_TUNED` |
+| `bscores.search` | `optuna_search` over a conditional space (optional extra) |
 | `bscores.diagnostics` | `explain_rating`, calibration, network health, churn |
 | `bscores.simulation` | `simulate_season` |
 | `bscores.schedule` | `infer_seasons`, `infer_rounds` |
@@ -409,15 +420,16 @@ throughput.
 | `bscores.datasets` | `load_afl` — 3533 AFL matches, 2009–2026, bundled |
 
 `numpy` is the only hard requirement. `pandas` powers the DataFrame adapters,
-`scipy` the sparse path for thousands of competitors, `matplotlib` the figures —
-all optional, all imported lazily.
+`scipy` the sparse path for thousands of competitors, `matplotlib` the figures,
+`optuna` the Bayesian search — all optional, all imported lazily.
 
 ```bash
 REPO="git+https://github.com/dclaz/bscores@claude/bscores-python-impl-dsbd3i"
 
-pip install "$REPO"                  # numpy only
-pip install "bscores[all] @ $REPO"   # + pandas, scipy, matplotlib
-pip install "bscores[dev] @ $REPO"   # + pytest, ruff, mypy
+pip install "$REPO"                   # numpy only
+pip install "bscores[all] @ $REPO"    # + pandas, scipy, matplotlib, optuna
+pip install "bscores[tune] @ $REPO"   # + optuna, for bscores.search
+pip install "bscores[dev] @ $REPO"    # + pytest, ruff, mypy
 ```
 
 Or clone and work in place, which is what the development commands below
@@ -488,7 +500,8 @@ pip install -e ".[dev]"
 pytest                                    # 532 tests
 ruff check src tests scripts examples
 mypy
-python examples/afl_tuning.py             # hyperparameter search
+python examples/afl_tuning.py             # grid search, staged
+python examples/afl_optuna.py             # Bayesian search (needs the tune extra)
 python examples/afl_explore.py --plot out/
 python scripts/build_afl_dataset.py       # rebuild the bundled data
 ```

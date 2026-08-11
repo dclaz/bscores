@@ -26,6 +26,15 @@ All notable changes to this project are documented here. The format follows
   figure generated from the bundled data.
 - `bscores.baselines.tune_elo` searches Elo's hyperparameters on a validation
   window, so the baseline gets the same budget the B-score grid does.
+- `bscores.search` (optional, `pip install "bscores[tune]"`): `optuna_search`
+  runs a TPE search over a *conditional* space — `window_width` only sampled
+  for window kernels, margin-scheme parameters only when margin weighting is
+  on — which a grid cannot express, and `optuna_search_elo` searches the
+  baseline with the same sampler and budget. On AFL, 600 trials each take
+  validation log-loss from the grid's 0.6177 to 0.6125 and held-out test from
+  0.5853 to 0.5765. It also found a regularization of 0.29, an order of
+  magnitude above anything the grid's axis offered.
+- `examples/afl_optuna.py`.
 
 ### Changed
 

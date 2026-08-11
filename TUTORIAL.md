@@ -18,7 +18,7 @@ against. Or jump to what you need:
 | [6. How much a result counts](#6-how-much-a-result-counts) | margin and importance weights |
 | [7. Forecasting](#7-forecasting) | `fit`, `predict_win`, calibration |
 | [8. Evaluating honestly](#8-evaluating-honestly) | `rolling_forecast`, baselines, significance |
-| [9. Tuning](#9-tuning) | `grid_search`, sensitivity, held-out reporting |
+| [9. Tuning](#9-tuning) | `grid_search`, `optuna_search`, held-out reporting |
 | [10. Diagnostics](#10-diagnostics) | explaining, calibration, network health |
 | [11. Rating histories and plots](#11-rating-histories-and-plots) | `score_history`, the round axis |
 | [12. Seasons and rounds](#12-seasons-and-rounds) | recovering structure from fixtures |
@@ -474,16 +474,19 @@ elo_tuned = Elo(**params).run(afl.home_team, afl.away_team, afl.outcome)[test]
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| Elo, tuned (home advantage 45, K scale 400, K power 0.4) | **0.5817** | **0.1987** | **0.6848** |
-| B-score, tuned (α = 120, exponential, sqrt, MoV weights) | 0.5853 | 0.1993 | 0.6703 |
+| B-score, TPE-tuned | **0.5765** | **0.1958** | 0.6824 |
+| Elo, TPE-tuned (home advantage 55, K 50, spread 455) | 0.5809 | 0.1985 | **0.6836** |
+| B-score, grid-tuned (α = 120, exponential, sqrt, MoV) | 0.5853 | 0.1993 | 0.6703 |
+| Elo, grid-tuned (home advantage 45, K scale 400, K power 0.4) | 0.5817 | 0.1987 | 0.6848 |
 | Elo, paper defaults (no home advantage, K scale 250) | 0.6012 | 0.2062 | 0.6570 |
 | B-score, paper defaults (α = 365, hyperbolic) | 0.6348 | 0.2201 | 0.6244 |
 | home-ground base rate | 0.6808 | 0.2417 | 0.5749 |
 
-Both tuned models chose hyperparameters on 2019–2022 and were scored once on
-2023–2026. Tuned Elo is nominally ahead on all three metrics. Choose your
-baseline before you look at the result, and give it the same care you give
-your model.
+Every tuned row picked its settings on 2019–2022 and was scored once on
+2023–2026, and the two TPE rows used the same sampler and the same 600-trial
+budget — `optuna_search_elo` exists precisely so the baseline can be searched
+as hard as the model. Choose your baseline before you look at the result, and
+give it the same care you give your model.
 
 ### Is the gap real?
 
@@ -500,8 +503,8 @@ dm, pvalue = diebold_mariano(
 
 | against | DM | p |
 | --- | ---: | ---: |
-| Elo, tuned (home advantage 45, K scale 400, K power 0.4) | +0.594 | 0.552 |
-| Elo, paper defaults (no home advantage, K scale 250) | −1.978 | 0.048 |
+| Elo, TPE-tuned | −0.725 | 0.468 |
+| Elo, paper defaults (no home advantage) | −1.978 | 0.048 |
 | B-score, paper defaults (α = 365, hyperbolic) | −5.235 | <0.0001 |
 | home base rate | −7.426 | <0.0001 |
 
@@ -511,7 +514,7 @@ difficulty of any given match cancels. Negative favours the B-score model.
 
 So: comfortably better than a base rate and than either system's defaults, and
 indistinguishable from a fairly tuned Elo. That is the honest reading — and the
-useful lesson is that **tuning the memory parameter bought far more than the
+useful lesson is that **searching the hyperparameters bought far more than the
 choice between the two rating systems did.**
 
 ![Backtest](docs/images/tutorial_backtest.png)
@@ -585,16 +588,12 @@ profile genuinely means the knob does not matter.
 ```python
 from bscores.plotting import plot_tuning
 plot_tuning(search, "alpha")      # numeric -> line, log x by default
-plot_tuning(search, "kernel")     # categorical -> dots on a zoomed axis
 ```
 
 A sharp minimum means tune it. `alpha` spans 0.044 of log-loss across the grid;
-`transform` spans 0.001.
-
-The categorical panel is dots rather than bars on purpose: the differences that
-decide these comparisons are a fraction of a percent, so bars drawn from zero
-hide the result completely, and bars drawn from a truncated axis misrepresent
-the ratio between them.
+`transform` spans 0.001. `plot_tuning` handles categorical parameters too, but
+for a two-valued knob the `sensitivity` numbers say everything the picture
+would.
 
 ### Searching over weights
 
@@ -609,6 +608,49 @@ search = grid_search(
 ```
 
 `weight_options` alone does nothing — `"weights"` must also appear in the grid.
+
+### When the grid is the wrong shape
+
+A grid is a box, and the space usually is not. `window_width` only means
+something for a window kernel; the margin scheme's `scale` and `cap` only exist
+if margin weighting is on at all. A grid must either enumerate meaningless
+combinations or leave those parameters out — and its size is the product of its
+axes, so nine parameters at four values each is 260 000 configurations.
+
+`bscores.search` (needs `pip install "bscores[tune]"`) hands the problem to
+Optuna's TPE sampler, which spends its budget where earlier trials looked
+promising and samples conditional parameters only along the branches where they
+apply:
+
+```python
+from bscores.search import optuna_search
+
+search = optuna_search(
+    afl.home_team, afl.away_team, afl.outcome, afl.date,
+    margins=afl.margin, finals=afl.final,       # unlocks the weighting branches
+    validation_start="2019-01-01", validation_end="2023-01-01",
+    n_trials=600, n_startup_trials=120,         # 120 random draws before TPE engages
+    seed=0,
+)
+search.best_score      # 0.6125 on validation, against the grid's 0.6177
+search.best_params
+# {'alpha': 108.43, 'kernel': 'exponential', 'transform': 'log',
+#  'symmetric': False, 'regularization': 0.2934, 'draw_weight': 0.5279,
+#  'margin_scheme': 'sqrt', 'margin_scale': 9.97, 'margin_cap': 5.53}
+```
+
+`n_startup_trials` is the one to think about. Those are random draws made before
+the TPE model takes over; too few and the sampler commits to whichever corner it
+stumbled into first. A fifth of the budget is a reasonable default, and never
+fewer than a few times the number of parameters.
+
+Two things this found that the grid could not. The regularization it likes is
+**0.29** — an order of magnitude above the 0.03 the grid's coarse axis offered,
+and a real finding rather than a rounding difference. And `margin_scale ≈ 10`
+with a `cap` of 5.5 is a quite different margin curve from the grid's `24`/`3.0`.
+
+The same discipline applies, more urgently: a smarter search overfits a
+validation window faster than a dumb one, so the test window stays sealed.
 
 ### Report once, on data the search never saw
 
@@ -989,7 +1031,8 @@ CSR automatically. A 256-competitor, 50 000-match archive back-tests in about
 
 * [`README.md`](README.md) — the method, and what a tuned model achieves
 * `python examples/afl_explore.py --plot out/` — diagnostics end to end
-* `python examples/afl_tuning.py` — the full search, staged
+* `python examples/afl_tuning.py` — the full grid search, staged
+* `python examples/afl_optuna.py` — Bayesian search over a conditional space
 * `python examples/benchmark.py` — throughput
 * Every module's docstring documents its own equations and edge cases.
 
