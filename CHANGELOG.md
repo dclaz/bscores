@@ -36,7 +36,7 @@ All notable changes to this project are documented here. The format follows
   that produced it, plus `calibration_curve`, `reliability_table`, `sharpness`,
   `upset_rate`, `network_summary`, `head_to_head` and `rating_churn`.
 - `bscores.simulation.simulate_season` — Monte Carlo season outcomes.
-- `bscores.plotting` — optional matplotlib figures (`pip install bscores[plot]`).
+- `bscores.plotting` — optional matplotlib figures, behind the `plot` extra.
 - `backtest.walk_forward` and `BacktestResult.between`.
 
 ### Changed

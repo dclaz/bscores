@@ -3,6 +3,8 @@
 ## Getting set up
 
 ```bash
+git clone -b claude/bscores-python-impl-dsbd3i https://github.com/dclaz/bscores
+cd bscores
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"

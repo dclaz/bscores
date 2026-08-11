@@ -24,8 +24,10 @@ This is a Python implementation of:
 > winner in tennis based on the eigenvector centrality.* Annals of Operations
 > Research 325, 615–632. <https://doi.org/10.1007/s10479-022-04594-7>
 
+Not yet on PyPI — install from the repository:
+
 ```bash
-pip install bscores
+pip install "git+https://github.com/dclaz/bscores@claude/bscores-python-impl-dsbd3i"
 ```
 
 ```python
@@ -241,7 +243,7 @@ season.position_distribution("Geelong")
 
 ### Plotting
 
-`pip install "bscores[plot]"` adds `plot_ratings`, `plot_calibration`,
+Installing with the `plot` extra (see below) adds `plot_ratings`, `plot_calibration`,
 `plot_tuning`, `plot_network`, `plot_backtest` and `plot_decay`. Each takes an
 optional `ax` and returns it, so they compose into a dashboard.
 
@@ -381,10 +383,24 @@ throughput.
 all optional, all imported lazily.
 
 ```bash
-pip install bscores            # numpy only
-pip install "bscores[all]"     # + pandas, scipy, matplotlib
-pip install "bscores[dev]"     # + pytest, ruff, mypy
+REPO="git+https://github.com/dclaz/bscores@claude/bscores-python-impl-dsbd3i"
+
+pip install "$REPO"                  # numpy only
+pip install "bscores[all] @ $REPO"   # + pandas, scipy, matplotlib
+pip install "bscores[dev] @ $REPO"   # + pytest, ruff, mypy
 ```
+
+Or clone and work in place, which is what the development commands below
+assume:
+
+```bash
+git clone -b claude/bscores-python-impl-dsbd3i https://github.com/dclaz/bscores
+cd bscores && pip install -e ".[all]"
+```
+
+Once the package is released to PyPI these all become plain
+`pip install bscores`; the release workflow that publishes it is already in
+`.github/workflows/release.yml`, waiting on a `v*` tag.
 
 ---
 

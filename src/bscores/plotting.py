@@ -1,6 +1,6 @@
 """Matplotlib figures for ratings, forecasts and searches.
 
-Optional: ``pip install bscores[plot]``.  Nothing else in the package imports
+Optional: needs the ``plot`` extra.  Nothing else in the package imports
 this module, so the core stays numpy-only.
 
 Every function takes an optional ``ax`` and returns the axes it drew on, so
@@ -41,7 +41,7 @@ def _axes(ax: Any, **kwargs: Any) -> Any:
         import matplotlib.pyplot as plt
     except ImportError as exc:  # pragma: no cover - exercised only without matplotlib
         raise ImportError(
-            "plotting needs matplotlib; install it with: pip install 'bscores[plot]'"
+            "plotting needs matplotlib; install it with: pip install matplotlib"
         ) from exc
     _, ax = plt.subplots(**kwargs)
     return ax
