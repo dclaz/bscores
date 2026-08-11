@@ -1,7 +1,28 @@
 # bscores
 
-Rate and forecast pairwise contests using the eigenvector centrality of the
-network of results.
+**Rate and forecast pairwise contests using the eigenvector centrality of the
+network of results.**
+
+`bscores` gives you a rating for every competitor in a competition, a calibrated
+probability for any match you care to ask about, and the tooling to check
+whether those probabilities are any good — back-testing, hyperparameter search,
+diagnostics, season simulation and plots. It works on anything decided by
+head-to-head results: sports leagues, tournaments, chess, esports, A/B contests.
+
+**The method.** Every result becomes an arrow in a directed network, pointing
+from the loser to the winner and weighted by how recently the match was played.
+A competitor's rating — its *B-score* — is its entry in the principal
+eigenvector of that network, which makes the rating recursive: your rating is
+high when the competitors you have beaten are themselves highly rated. Because
+every rating depends on every other, a single result updates the entire
+competition, including competitors who did not play. Probabilities come from a
+logistic regression on the two ratings.
+
+This is a Python implementation of:
+
+> Arcagni, A., Candila, V. & Grassi, R. (2023). *A new model for predicting the
+> winner in tennis based on the eigenvector centrality.* Annals of Operations
+> Research 325, 615–632. <https://doi.org/10.1007/s10479-022-04594-7>
 
 ```bash
 pip install bscores
@@ -25,30 +46,28 @@ model.predict_win([["Fremantle"], ["Richmond"]])    # [0.944, 0.056]
 
 ---
 
-## The idea
+## The idea in more detail
 
 Most rating systems treat a match as a private transaction: two competitors
-play, their two ratings move, everyone else's stay put. B-scores treat the
-whole competition as one object.
+play, their two ratings move, everyone else's stay put. B-scores treat the whole
+competition as one object.
 
-Write down every result as an arrow pointing **from the loser to the winner**,
-and weight each arrow by how recently the match was played. That gives a
-directed, weighted network. A competitor's rating is its entry in the
-**principal eigenvector** of that network — which makes the rating recursive:
+Formally, the network at time $t$ collects every past result, each decayed by
+its age (Eq. 1 of the paper). Writing $L_s$ for the matrix of losses recorded at
+time $s$, and $f$ for the decay kernel:
 
-> your rating is high when the competitors you have beaten are themselves
-> highly rated.
+$$W_t = \sum_{s \le t} f(s, t, \alpha) \, L_s$$
 
-Formally, the network at time $t$ collects every past result, decayed by age
-(Eq. 1 of the paper):
+The ratings are then the principal eigenvector of its transpose (Eq. 11), where
+$\rho$ is the spectral radius:
 
-$$W_t = \sum_{t^* \le t} f(t^*, t, \alpha)\, L_{t^*}$$
+$$x = \frac{1}{\rho} \, W_t' \, x, \qquad \lVert x \rVert_2 = 1$$
 
-and the ratings are the principal eigenvector of its transpose (Eq. 11):
+Reading that equation on this network — where an arrow points from loser to
+winner — says a competitor scores highly when the competitors *pointing at* it
+score highly, which is to say when it beats strong opponents.
 
-$$x = \frac{1}{\rho} W_t' x, \qquad \lVert x \rVert_2 = 1$$
-
-That recursion has a consequence worth pausing on. Because every rating depends
+The recursion has a consequence worth pausing on. Because every rating depends
 on every other, **a new result moves everybody** — including competitors who
 were nowhere near the match:
 
@@ -69,10 +88,6 @@ model.rating("c").score        # 0.2963
 Bradley-Terry would all have left `c` untouched. This is the property the method
 exists for, and it is why ratings are computed by solving the network rather
 than by updating a pair of numbers.
-
-> Arcagni, A., Candila, V. & Grassi, R. (2023). *A new model for predicting the
-> winner in tennis based on the eigenvector centrality.* Annals of Operations
-> Research 325, 615–632. <https://doi.org/10.1007/s10479-022-04594-7>
 
 ---
 
@@ -297,7 +312,7 @@ log-loss:
 | `symmetric` | 0.6191 False | 0.6194 True | indistinguishable |
 | `refit_every` | 0.6241 @ 828 | 0.6246 @ 300 | indistinguishable |
 
-Three things this brings out about the method:
+Three things this brings out:
 
 **The decay kernel's tail matters more than its shape.** The paper's hyperbolic
 kernel is heavy-tailed: at α = 365 a decade-old result still carries weight
@@ -312,11 +327,28 @@ weight per arc, and using it for margin of victory buys about as much as the
 kernel choice does. `bscores.weights` provides `margin_weight` and
 `importance_weight`; the search treats them as another grid dimension.
 
-**Accuracy and profitability are different objectives.** Applying the paper's
-staking rule (Definition 1) to the bundled closing odds returns −4.8% to −2.1%
-at thresholds from 0.55 to 0.70. The most selective cell comes out at +0.8%, but
-on 236 bets that is t = 0.31 with a 95% interval of [−4.3%, +5.8%] — consistent
-with zero. Better forecasts did not translate into a beatable market here.
+**The gains are worth testing for significance.** A Diebold-Mariano test[^dm]
+against the tuned model returns −5.24 versus the paper's defaults
+(p &lt; 0.0001), −1.98 versus Elo (p = 0.048) and −7.43 versus the base rate
+(p &lt; 0.0001). The first gap is emphatic, the second marginal — worth knowing
+before claiming the method beats Elo on this data.
+
+[^dm]: The [Diebold-Mariano test](https://doi.org/10.1080/07350015.1995.10524599)
+    asks whether two forecasters differ in accuracy by more than sampling noise.
+    Rather than compare two summary numbers, it works with the *per-match* loss
+    difference $d_i = L(\text{model A}_i) - L(\text{model B}_i)$ over the same
+    test set and tests $H_0: \mathbb{E}[d] = 0$. The statistic is
+    $\bar{d} / \mathrm{se}(\bar{d})$, asymptotically standard normal, with
+    negative values favouring model A. The standard error comes from the
+    long-run variance of $d$, which for the one-step-ahead forecasts used here
+    needs no autocovariance lags; multi-step forecasts add them, and
+    `bscores.metrics.diebold_mariano` takes a `horizon` argument for that. It
+    also applies the Harvey-Leybourne-Newbold small-sample correction by
+    default. Pairing the losses match by match is what gives the test its
+    power: both models face identical fixtures, so the common difficulty of any
+    given match cancels. That matters here because 828 matches is not many — a
+    0.016 log-loss gap can easily be luck, and this is what separates the two
+    cases. `BacktestResult.losses()` produces the per-match series it consumes.
 
 Two more scripts round out the tour: `examples/afl_explore.py` walks through the
 diagnostics and writes the figures, and `examples/benchmark.py` measures
@@ -334,7 +366,7 @@ throughput.
 | `bscores.decay` | `Hyperbolic` (Eq. 2), `Exponential`, `Uniform`, `Window` |
 | `bscores.weights` | `margin_weight`, `importance_weight` |
 | `bscores.calibration` | `LogitCalibrator` (Eq. 3), `fit_logistic` — IRLS, numpy only |
-| `bscores.metrics` | `log_loss`, `brier_score`, `diebold_mariano`, `roi` |
+| `bscores.metrics` | `log_loss`, `brier_score`, `accuracy`, `diebold_mariano` |
 | `bscores.backtest` | `rolling_forecast`, `walk_forward` |
 | `bscores.tuning` | `grid_search`, `refit_best`, `AFL_TUNED` |
 | `bscores.diagnostics` | `explain_rating`, calibration, network health, churn |
