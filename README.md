@@ -288,9 +288,9 @@ archive and scores the winner once on 2023–2026:
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| Elo, tuned | **0.5817** | **0.1987** | **0.6848** |
-| B-score, tuned | 0.5853 | 0.1993 | 0.6703 |
-| Elo, paper defaults | 0.6012 | 0.2062 | 0.6570 |
+| Elo, tuned (home advantage 45, K scale 400, K power 0.4) | **0.5817** | **0.1987** | **0.6848** |
+| B-score, tuned (α = 120, exponential, sqrt, MoV weights) | 0.5853 | 0.1993 | 0.6703 |
+| Elo, paper defaults (no home advantage, K scale 250) | 0.6012 | 0.2062 | 0.6570 |
 | B-score, paper defaults (α = 365, hyperbolic) | 0.6348 | 0.2201 | 0.6244 |
 | home-ground base rate | 0.6808 | 0.2417 | 0.5749 |
 

@@ -192,9 +192,13 @@ def final(matches) -> dict:
         weight_options=options,
         test_start=TEST_START,
     )
+    bscore_label = (
+        f"B-score, tuned (alpha={chosen['alpha']:g}, {chosen['kernel']}, "
+        f"{chosen['transform']}, {chosen['weights']})"
+    )
     reference = {
-        "B-score, tuned": tuned,
-        "B-score, paper alpha=365": rolling_forecast(
+        bscore_label: tuned,
+        "B-score, paper defaults (alpha=365, hyperbolic)": rolling_forecast(
             matches.home_team,
             matches.away_team,
             matches.outcome,
@@ -224,26 +228,39 @@ def final(matches) -> dict:
     base_rate = np.full(n_test, matches.outcome[:start].mean())
 
     print(f"  test set: {n_test} matches\n")
-    print(f"  {'model':<28}{'log-loss':>10}{'Brier':>9}{'accuracy':>10}")
+    print(f"  {'model':<52}{'log-loss':>10}{'Brier':>9}{'accuracy':>10}")
     for name, res in reference.items():
         scores = res.metrics()
         print(
-            f"  {name:<28}{scores['log_loss']:>10.4f}{scores['brier_score']:>9.4f}"
+            f"  {name:<52}{scores['log_loss']:>10.4f}{scores['brier_score']:>9.4f}"
             f"{scores['accuracy']:>10.4f}"
         )
+    # Compact names so the label fits the table's model column.
+    short = {
+        "home_advantage": "home adv",
+        "k_scale": "K scale",
+        "k_shape": "K shape",
+        "k_power": "K power",
+        "k": "K",
+    }
+    elo_label = "Elo, tuned (" + ", ".join(
+        f"{short.get(key, key)} {value:g}" for key, value in elo_params.items()
+    ) + ")"
     for name, probability in (
-        ("Elo, tuned", elo_tuned),
-        ("Elo, paper defaults", elo_default),
+        (elo_label, elo_tuned),
+        ("Elo, paper defaults (no home advantage)", elo_default),
         ("home base rate", base_rate),
     ):
         scores = evaluate(matches.outcome[start:], probability)
         print(
-            f"  {name:<28}{scores['log_loss']:>10.4f}{scores['brier_score']:>9.4f}"
+            f"  {name:<52}{scores['log_loss']:>10.4f}{scores['brier_score']:>9.4f}"
             f"{scores['accuracy']:>10.4f}"
         )
 
-    settings = ", ".join(f"{k}={v:g}" for k, v in elo_params.items())
-    print(f"\n  Elo was tuned on the same validation window: {settings}")
+    print(
+        "\n  Both tuned models chose their settings on the same validation"
+        "\n  window and were scored once here."
+    )
 
     print("\n  Diebold-Mariano vs the tuned model (negative favours tuned):")
     observed = matches.outcome[start:]
@@ -254,14 +271,16 @@ def final(matches) -> dict:
 
     tuned_loss = tuned.losses("log_loss")
     comparisons = {
-        "Elo, tuned": pointwise(elo_tuned),
-        "Elo, paper defaults": pointwise(elo_default),
-        "paper alpha=365": reference["B-score, paper alpha=365"].losses("log_loss"),
+        elo_label: pointwise(elo_tuned),
+        "Elo, paper defaults (no home advantage)": pointwise(elo_default),
+        "B-score, paper defaults (alpha=365, hyperbolic)": reference[
+            "B-score, paper defaults (alpha=365, hyperbolic)"
+        ].losses("log_loss"),
         "home base rate": pointwise(base_rate),
     }
     for name, other in comparisons.items():
         statistic, p_value = diebold_mariano(tuned_loss, other)
-        print(f"    vs {name:<18} DM = {statistic:>7.3f}   p = {p_value:.4f}")
+        print(f"    vs {name:<52} DM = {statistic:>7.3f}   p = {p_value:.4f}")
 
     validation_score = result.best_score
     test_score = tuned.metrics()["log_loss"]

@@ -474,10 +474,10 @@ elo_tuned = Elo(**params).run(afl.home_team, afl.away_team, afl.outcome)[test]
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| Elo, tuned | **0.5817** | **0.1987** | **0.6848** |
-| B-score, tuned | 0.5853 | 0.1993 | 0.6703 |
-| Elo, paper defaults | 0.6012 | 0.2062 | 0.6570 |
-| B-score, paper defaults | 0.6348 | 0.2201 | 0.6244 |
+| Elo, tuned (home advantage 45, K scale 400, K power 0.4) | **0.5817** | **0.1987** | **0.6848** |
+| B-score, tuned (α = 120, exponential, sqrt, MoV weights) | 0.5853 | 0.1993 | 0.6703 |
+| Elo, paper defaults (no home advantage, K scale 250) | 0.6012 | 0.2062 | 0.6570 |
+| B-score, paper defaults (α = 365, hyperbolic) | 0.6348 | 0.2201 | 0.6244 |
 | home-ground base rate | 0.6808 | 0.2417 | 0.5749 |
 
 Both tuned models chose hyperparameters on 2019–2022 and were scored once on
@@ -500,9 +500,9 @@ dm, pvalue = diebold_mariano(
 
 | against | DM | p |
 | --- | ---: | ---: |
-| Elo, tuned | +0.594 | 0.552 |
-| Elo, paper defaults | −1.978 | 0.048 |
-| B-score, paper defaults | −5.235 | <0.0001 |
+| Elo, tuned (home advantage 45, K scale 400, K power 0.4) | +0.594 | 0.552 |
+| Elo, paper defaults (no home advantage, K scale 250) | −1.978 | 0.048 |
+| B-score, paper defaults (α = 365, hyperbolic) | −5.235 | <0.0001 |
 | home base rate | −7.426 | <0.0001 |
 
 The test compares *per-match* loss differences rather than two summary numbers,
