@@ -50,7 +50,7 @@ class Elo:
     home_advantage
         Rating points added to the home side before computing the probability.
     spread
-        Rating difference worth a factor of ``base`` in the odds.
+        Rating difference worth a factor of ``base`` in the odds ratio.
     """
 
     def __init__(

@@ -22,8 +22,6 @@ EXPECTED_COLUMNS = [
     "margin",
     "outcome",
     "final",
-    "home_odds",
-    "away_odds",
 ]
 
 
@@ -66,15 +64,6 @@ class TestNumpyLoader:
 
     def test_finals_are_flagged(self, matches):
         assert int(matches.final.sum()) == 145
-
-    def test_odds_are_present_and_plausible(self, matches):
-        # One 2012 fixture is quoted at a flat 1.00; everything else clears it.
-        assert np.all(matches.home_odds >= 1.0)
-        assert np.all(matches.away_odds >= 1.0)
-        assert not np.any(np.isnan(matches.home_odds))
-        # The bookmaker's book is over-round: implied probabilities exceed 1.
-        implied = 1.0 / matches.home_odds + 1.0 / matches.away_odds
-        assert implied.mean() > 1.0
 
     def test_repr(self, matches):
         assert "3533 matches" in repr(matches)

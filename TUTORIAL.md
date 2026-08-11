@@ -55,8 +55,7 @@ MatchData(3533 matches, 18 teams, 2009-06-19 to 2026-08-02)
 
 ```python
 afl.date, afl.date_time, afl.season, afl.round, afl.home_team, afl.away_team,
-afl.venue, afl.home_score, afl.away_score, afl.margin, afl.outcome, afl.final,
-afl.home_odds, afl.away_odds
+afl.venue, afl.home_score, afl.away_score, afl.margin, afl.outcome, afl.final
 ```
 
 ```python
@@ -68,7 +67,7 @@ print(afl.date[0], afl.home_team[0], "vs", afl.away_team[0],
 2009-06-19 Essendon vs Melbourne | margin 48 | outcome 1.0 | 2009 R1
 ```
 
-`load_afl()` with no argument returns a `pandas.DataFrame` instead — same 14
+`load_afl()` with no argument returns a `pandas.DataFrame` instead — same 12
 columns, 3533 rows.
 
 ### The only four things bscores needs

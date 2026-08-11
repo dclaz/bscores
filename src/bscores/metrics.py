@@ -22,7 +22,6 @@ __all__ = [
     "classification_error",
     "evaluate",
     "diebold_mariano",
-    "roi",
 ]
 
 #: The default clip: the largest float64 eps below 1, i.e. ``2**-53``.
@@ -153,51 +152,3 @@ def diebold_mariano(
 
     p_value = math.erfc(abs(statistic) / math.sqrt(2.0))
     return statistic, p_value
-
-
-def roi(
-    outcome: Any,
-    prediction: Any,
-    odds: Any,
-    *,
-    threshold: float = 0.5,
-    min_implied: float = 0.0,
-    stake: float = 1.0,
-) -> dict[str, float]:
-    """Return on investment for a flat-stake betting rule.
-
-    Implements the strategy of Definition 1: back the side whenever the model's
-    probability exceeds ``threshold`` (``r`` in the paper) *and* the bookmaker's
-    implied probability exceeds ``min_implied`` (``q``, which filters out heavy
-    underdogs).
-
-    Parameters
-    ----------
-    outcome
-        1 if the backed side won, 0 if it lost, 0.5 for a draw (stake returned).
-    prediction
-        Model probability for that side.
-    odds
-        Decimal odds on that side.
-    """
-    y, p = _pair(outcome, prediction)
-    o = np.asarray(odds, dtype=np.float64).ravel()
-    if o.shape != y.shape:
-        raise ValueError(f"odds length mismatch: {o.size} vs {y.size}")
-
-    implied = np.divide(1.0, o, out=np.zeros_like(o), where=o > 0.0)
-    bet = (p > threshold) & (implied > min_implied) & np.isfinite(o) & (o > 0.0)
-    n_bets = int(bet.sum())
-    if n_bets == 0:
-        return {"n_bets": 0.0, "staked": 0.0, "profit": 0.0, "roi": float("nan")}
-
-    # A draw returns the stake; otherwise the bet wins ``odds`` or loses it.
-    returns = np.where(np.isclose(y[bet], 0.5), 1.0, y[bet] * o[bet])
-    staked = stake * n_bets
-    profit = float(stake * np.sum(returns) - staked)
-    return {
-        "n_bets": float(n_bets),
-        "staked": float(staked),
-        "profit": profit,
-        "roi": profit / staked,
-    }

@@ -1,9 +1,8 @@
 """B-score diagnostics on the AFL archive.
 
 Runs the paper's evaluation protocol over 3533 AFL matches (2009-2026): ratings,
-an out-of-sample forecast comparison against Elo and the home-ground base rate, a
-Diebold-Mariano test on the loss differences, and the betting ROI surface from
-Definition 1.
+an out-of-sample forecast comparison against Elo and the home-ground base rate,
+and a Diebold-Mariano test on the loss differences.
 
 For choosing the hyperparameters rather than evaluating a fixed set, see
 ``examples/afl_tuning.py``; for exploring the ratings themselves, see
@@ -21,7 +20,7 @@ import time
 
 import numpy as np
 
-from bscores import BScoreModel, Elo, diebold_mariano, evaluate, roi, rolling_forecast
+from bscores import BScoreModel, Elo, diebold_mariano, evaluate, rolling_forecast
 from bscores.datasets import load_afl
 
 
@@ -95,43 +94,12 @@ def show_forecasts(matches, alpha: float, kernel: str) -> tuple[object, np.ndarr
     return result, base_rate
 
 
-def show_betting(matches, result) -> None:
-    rule("Betting ROI, Definition 1 (flat 1-unit stakes, best available odds)")
-    start = len(matches) - len(result)
-    home_odds = matches.home_odds[start:]
-    away_odds = matches.away_odds[start:]
-
-    print(f"{'r':>6}{'q':>6}{'bets':>7}{'ROI':>9}")
-    for threshold in (0.55, 0.60, 0.65, 0.70, 0.75):
-        for min_implied in (0.0, 0.3):
-            home = roi(
-                result.outcome,
-                result.probability,
-                home_odds,
-                threshold=threshold,
-                min_implied=min_implied,
-            )
-            away = roi(
-                1.0 - result.outcome,
-                1.0 - result.probability,
-                away_odds,
-                threshold=threshold,
-                min_implied=min_implied,
-            )
-            bets = home["n_bets"] + away["n_bets"]
-            if bets == 0:
-                continue
-            profit = home["profit"] + away["profit"]
-            print(f"{threshold:>6.2f}{min_implied:>6.2f}{int(bets):>7}{profit / bets:>9.2%}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--alpha", type=float, default=120.0, help="half-life, in days")
     parser.add_argument(
         "--kernel", default="exponential", choices=["hyperbolic", "exponential", "uniform"]
     )
-    parser.add_argument("--quick", action="store_true", help="skip the betting surface")
     args = parser.parse_args()
 
     matches = load_afl(as_frame=False)
@@ -139,8 +107,6 @@ def main() -> None:
 
     show_ratings(matches, args.alpha, args.kernel)
     result, _ = show_forecasts(matches, args.alpha, args.kernel)
-    if not args.quick:
-        show_betting(matches, result)
 
 
 if __name__ == "__main__":

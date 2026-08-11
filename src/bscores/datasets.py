@@ -42,8 +42,6 @@ class MatchData:
         Home-side result on the ``{0, 0.5, 1}`` scale.
     final
         Whether the match was a play-off.
-    home_odds, away_odds
-        Bookmaker decimal odds.
     """
 
     date: np.ndarray
@@ -58,8 +56,6 @@ class MatchData:
     margin: np.ndarray
     outcome: np.ndarray
     final: np.ndarray
-    home_odds: np.ndarray
-    away_odds: np.ndarray
 
     def __len__(self) -> int:
         return int(self.outcome.size)
@@ -101,7 +97,7 @@ def _float_column(rows: list[dict[str, str]], key: str) -> np.ndarray:
 
 
 def load_afl(*, as_frame: bool = True) -> Any:
-    """Load AFL match results and betting odds, 2009-06-19 to 2026-08-02.
+    """Load AFL match results, 2009-06-19 to 2026-08-02.
 
     3533 matches between 18 teams, sorted chronologically.  Sourced from
     https://www.aussportsbetting.com/historical_data/afl.xlsx.
@@ -148,6 +144,4 @@ def load_afl(*, as_frame: bool = True) -> Any:
         margin=np.array([int(row["margin"]) for row in rows], dtype=np.int64),
         outcome=_float_column(rows, "outcome"),
         final=np.array([row["final"] == "True" for row in rows], dtype=bool),
-        home_odds=_float_column(rows, "home_odds"),
-        away_odds=_float_column(rows, "away_odds"),
     )

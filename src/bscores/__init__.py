@@ -49,7 +49,7 @@ Where things live
 :mod:`bscores.decay`     ``Hyperbolic``, ``Exponential``, ``Uniform``, ``Window``
 :mod:`bscores.weights`   margin-of-victory and match-importance arc weights
 :mod:`bscores.calibration` the logit that turns ratings into probabilities
-:mod:`bscores.metrics`   log-loss, Brier, Diebold-Mariano, betting ROI
+:mod:`bscores.metrics`   log-loss, Brier, accuracy, Diebold-Mariano
 :mod:`bscores.backtest`  ``rolling_forecast`` — expanding-window evaluation
 :mod:`bscores.tuning`    ``grid_search`` over a validation window
 :mod:`bscores.search`    ``optuna_search`` over a conditional space (optional)
@@ -92,7 +92,6 @@ from .metrics import (
     diebold_mariano,
     evaluate,
     log_loss,
-    roi,
 )
 from .models import BScoreModel, Rating, RatingHistory
 from .network import LossNetwork, NodeIndex
@@ -136,7 +135,6 @@ __all__ = [
     "classification_error",
     "evaluate",
     "diebold_mariano",
-    "roi",
     "rolling_forecast",
     "walk_forward",
     "BacktestResult",

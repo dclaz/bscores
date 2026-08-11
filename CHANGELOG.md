@@ -47,6 +47,13 @@ All notable changes to this project are documented here. The format follows
   calibrating logit's intercept; the paper's Elo has no such term, so it has to
   be given one for the comparison to be like for like.
 
+### Removed
+
+- `bscores.metrics.roi` and the `home_odds` / `away_odds` columns of the bundled
+  dataset. The package rates and forecasts; scoring a staking rule was outside
+  what it is for, and nothing else read the odds. `MatchData` now carries 12
+  columns rather than 14.
+
 ### Fixed
 
 - `infer_rounds` returned different round numbers depending on the order

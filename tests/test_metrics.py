@@ -1,4 +1,4 @@
-"""Loss functions, the Diebold-Mariano test and the betting ROI."""
+"""Loss functions and the Diebold-Mariano test."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from bscores.metrics import (
     diebold_mariano,
     evaluate,
     log_loss,
-    roi,
 )
 
 
@@ -157,54 +156,3 @@ class TestDieboldMariano:
             diebold_mariano([1.0], [1.0])
         with pytest.raises(ValueError, match="horizon"):
             diebold_mariano([1.0, 2.0], [1.0, 2.0], horizon=0)
-
-
-class TestRoi:
-    def test_a_winning_bet_returns_the_odds(self):
-        result = roi([1.0], [0.9], [2.0], threshold=0.5)
-        assert result["n_bets"] == 1.0
-        assert result["profit"] == pytest.approx(1.0)
-        assert result["roi"] == pytest.approx(1.0)
-
-    def test_a_losing_bet_loses_the_stake(self):
-        result = roi([0.0], [0.9], [2.0], threshold=0.5)
-        assert result["profit"] == pytest.approx(-1.0)
-        assert result["roi"] == pytest.approx(-1.0)
-
-    def test_a_draw_returns_the_stake(self):
-        result = roi([0.5], [0.9], [2.0], threshold=0.5)
-        assert result["profit"] == pytest.approx(0.0)
-
-    def test_threshold_filters_matches(self):
-        outcome = [1.0, 1.0]
-        prediction = [0.9, 0.4]
-        odds = [2.0, 2.0]
-        assert roi(outcome, prediction, odds, threshold=0.5)["n_bets"] == 1.0
-        assert roi(outcome, prediction, odds, threshold=0.95)["n_bets"] == 0.0
-
-    def test_min_implied_excludes_heavy_underdogs(self):
-        # Implied probability 1/11 = 0.09, below the 0.2 floor.
-        result = roi([1.0], [0.9], [11.0], threshold=0.5, min_implied=0.2)
-        assert result["n_bets"] == 0.0
-        assert math.isnan(result["roi"])
-
-    def test_stake_scales_the_totals(self):
-        single = roi([1.0, 0.0], [0.9, 0.9], [2.0, 2.0], stake=1.0)
-        double = roi([1.0, 0.0], [0.9, 0.9], [2.0, 2.0], stake=2.0)
-        assert double["staked"] == pytest.approx(2 * single["staked"])
-        assert double["roi"] == pytest.approx(single["roi"])
-
-    def test_break_even_at_fair_odds(self):
-        rng = np.random.default_rng(5)
-        n = 20_000
-        outcome = (rng.random(n) < 0.6).astype(float)
-        result = roi(outcome, np.full(n, 0.9), np.full(n, 1 / 0.6))
-        assert result["roi"] == pytest.approx(0.0, abs=0.02)
-
-    def test_missing_odds_are_skipped(self):
-        result = roi([1.0, 1.0], [0.9, 0.9], [2.0, np.nan])
-        assert result["n_bets"] == 1.0
-
-    def test_length_mismatch_rejected(self):
-        with pytest.raises(ValueError, match="odds length"):
-            roi([1.0], [0.9], [2.0, 3.0])

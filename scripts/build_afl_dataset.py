@@ -38,8 +38,6 @@ COLUMNS = [
     "margin",
     "outcome",
     "final",
-    "home_odds",
-    "away_odds",
 ]
 
 
@@ -91,8 +89,6 @@ def build(source: Path = DEFAULT_SOURCE) -> pd.DataFrame:
             "margin": margin,
             "outcome": match_outcome(margin).astype("float64"),
             "final": raw["play_off_game"].notna(),
-            "home_odds": raw["home_odds"].astype("float64"),
-            "away_odds": raw["away_odds"].astype("float64"),
         }
     )[COLUMNS]
 
