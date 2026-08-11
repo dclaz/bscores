@@ -24,6 +24,19 @@ All notable changes to this project are documented here. The format follows
   PyPI on a tag.
 - `TUTORIAL.md`: a guided tour of the whole package, with every output and
   figure generated from the bundled data.
+- `bscores.baselines.tune_elo` searches Elo's hyperparameters on a validation
+  window, so the baseline gets the same budget the B-score grid does.
+
+### Changed
+
+- The AFL comparison now tunes Elo on the same validation window rather than
+  running it on the paper's defaults. This changes the headline result: a
+  tuned Elo reaches 0.5817 log-loss against the tuned B-score's 0.5853, and
+  Diebold-Mariano cannot separate them (+0.59, p = 0.55). The previous
+  "B-scores beat Elo by −1.98, p = 0.048" compared a searched model against an
+  unsearched one. A B-score model absorbs home advantage through the
+  calibrating logit's intercept; the paper's Elo has no such term, so it has to
+  be given one for the comparison to be like for like.
 
 ### Fixed
 

@@ -5,7 +5,8 @@ forecasting model. Every code block here was run against the bundled AFL
 archive, and every number printed alongside it is that run's actual output.
 
 Work through it in order and you will have built a model that beats the paper's
-own defaults by 0.05 of log-loss. Or jump to what you need:
+own defaults by 0.05 of log-loss — and a fairly tuned Elo baseline to check it
+against. Or jump to what you need:
 
 | | |
 | --- | --- |
@@ -440,7 +441,7 @@ A number with no baseline means nothing.
 
 ```python
 import numpy as np
-from bscores import Elo
+from bscores import Elo, tune_elo
 from bscores.metrics import evaluate, diebold_mariano
 
 test = afl.date >= np.datetime64("2023-01-01")        # the same 828 matches
@@ -450,17 +451,39 @@ evaluate(afl.outcome[test], elo_p)
 # {'log_loss': 0.6012, 'brier_score': 0.2062, 'accuracy': 0.657, ...}
 ```
 
+That is the paper's Elo (Eqs. 4–5), and beating it looks like a result. It is
+not, because the comparison is not like for like.
+
+**A B-score model gets home advantage for free.** The calibrating logit fits an
+intercept, and on a home/away competition that intercept *is* the home edge —
+§7 showed it landing at 0.5625 against a 0.5718 home win rate. The paper's Elo
+has no such term. So a searched B-score model against a default Elo measures
+the search, not the rating method.
+
+Give Elo the same budget on the same validation window:
+
+```python
+params = tune_elo(
+    afl.home_team, afl.away_team, afl.outcome, afl.date,
+    validation_start="2019-01-01", validation_end="2023-01-01",
+)
+# {'home_advantage': 45.0, 'k_scale': 400.0, 'k_power': 0.4}
+
+elo_tuned = Elo(**params).run(afl.home_team, afl.away_team, afl.outcome)[test]
+```
+
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| B-score, tuned | **0.5853** | **0.1993** | 0.6703 |
-| `Elo()` — paper defaults | 0.6012 | 0.2062 | 0.6570 |
-| `Elo(home_advantage=35)` | 0.5888 | 0.2013 | **0.6800** |
+| Elo, tuned | **0.5817** | **0.1987** | **0.6848** |
+| B-score, tuned | 0.5853 | 0.1993 | 0.6703 |
+| Elo, paper defaults | 0.6012 | 0.2062 | 0.6570 |
+| B-score, paper defaults | 0.6348 | 0.2201 | 0.6244 |
 | home-ground base rate | 0.6808 | 0.2417 | 0.5749 |
 
-**Read that third row carefully.** The paper's Elo (Eqs. 4–5) has no home-advantage
-term, which is a real handicap in a home/away sport. Giving Elo 35 rating points
-at home closes most of the gap — and on accuracy it overtakes. Choose your
-baseline before you look at the result, and prefer a strong one.
+Both tuned models chose hyperparameters on 2019–2022 and were scored once on
+2023–2026. Tuned Elo is nominally ahead on all three metrics. Choose your
+baseline before you look at the result, and give it the same care you give
+your model.
 
 ### Is the gap real?
 
@@ -477,17 +500,19 @@ dm, pvalue = diebold_mariano(
 
 | against | DM | p |
 | --- | ---: | ---: |
-| `Elo()` — paper defaults | −1.978 | 0.048 |
-| `Elo(home_advantage=35)` | −0.560 | 0.576 |
+| Elo, tuned | +0.594 | 0.552 |
+| Elo, paper defaults | −1.978 | 0.048 |
+| B-score, paper defaults | −5.235 | <0.0001 |
 | home base rate | −7.426 | <0.0001 |
 
 The test compares *per-match* loss differences rather than two summary numbers,
 which matters because both models face identical fixtures — the common
 difficulty of any given match cancels. Negative favours the B-score model.
 
-So: comfortably better than a base rate, and better than the paper's Elo by a
-whisker at p = 0.048. Against a *properly specified* Elo, 828 matches cannot
-tell them apart. That is the honest reading.
+So: comfortably better than a base rate and than either system's defaults, and
+indistinguishable from a fairly tuned Elo. That is the honest reading — and the
+useful lesson is that **tuning the memory parameter bought far more than the
+choice between the two rating systems did.**
 
 ![Backtest](docs/images/tutorial_backtest.png)
 
@@ -940,6 +965,11 @@ Check `network_summary(model)["unrated"]`.
 **Do not compare log-loss across windows.** A 0.58 on 2023–2026 and a 0.62 on
 2019–2022 says those seasons differed in predictability, not that your model
 improved. Only gaps *within* one window are meaningful.
+
+**Tune your baseline too.** An untuned baseline is not a baseline, it is a
+straw man — and the asymmetry is easy to miss, because a B-score model absorbs
+home advantage through its fitted intercept while Elo needs to be told. Use
+`tune_elo` on the same validation window your own search uses.
 
 **Tune `alpha` first, then weights, then the kernel.** In that order — they were
 worth 0.044, 0.009 and 0.011 of validation log-loss respectively on AFL, and

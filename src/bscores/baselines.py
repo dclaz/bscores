@@ -8,12 +8,25 @@ rating library.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import itertools
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
 
-__all__ = ["Elo"]
+from ._time import as_days
+from .typing import Names
+
+__all__ = ["Elo", "tune_elo", "DEFAULT_ELO_GRID"]
+
+#: A reasonable search space for :func:`tune_elo`.  ``home_advantage`` is the
+#: one that matters most on a home/away competition; the rest shape Kovalchik's
+#: experience-decayed K schedule.
+DEFAULT_ELO_GRID: dict[str, list[Any]] = {
+    "home_advantage": [0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0],
+    "k_scale": [100.0, 175.0, 250.0, 400.0],
+    "k_power": [0.2, 0.4, 0.6],
+}
 
 
 class Elo:
@@ -96,8 +109,8 @@ class Elo:
 
     def run(
         self,
-        home: Sequence[str],
-        away: Sequence[str],
+        home: Names,
+        away: Names,
         outcome: Any,
     ) -> np.ndarray:
         """Walk a fixture list in order, returning each pre-match probability.
@@ -120,3 +133,96 @@ class Elo:
     def __repr__(self) -> str:
         schedule = f"k={self.k}" if self.k is not None else f"k_scale={self.k_scale}"
         return f"Elo({schedule}, competitors={len(self._ratings)})"
+
+
+def tune_elo(
+    home: Names,
+    away: Names,
+    outcome: Any,
+    times: Any,
+    *,
+    grid: Mapping[str, Sequence[Any]] | None = None,
+    validation_start: Any,
+    validation_end: Any = None,
+    metric: str = "log_loss",
+) -> dict[str, Any]:
+    """Choose Elo's hyperparameters on a validation window.
+
+    A baseline nobody tuned is not a baseline, it is a straw man.  A B-score
+    model picks up home advantage for free — the calibrating logit fits an
+    intercept, and on a home/away competition that intercept *is* the home
+    edge — while Elo has to be told about it through ``home_advantage``.
+    Comparing a searched B-score model against a default Elo therefore flatters
+    the B-scores for reasons that have nothing to do with the rating method.
+
+    This gives Elo the same treatment: a search over the same validation window
+    the B-score grid uses, leaving the test window untouched for both.
+
+    Parameters
+    ----------
+    home, away, outcome, times
+        The full fixture list.  Sorted chronologically internally, since Elo is
+        sequential and the order it walks the fixtures in is the whole model.
+    grid
+        Values to try, defaulting to :data:`DEFAULT_ELO_GRID`.  Keys are
+        :class:`Elo` constructor arguments.
+    validation_start, validation_end
+        The window to score on, as a date or a fraction of the fixture list.
+        Everything before ``validation_start`` is warm-up.
+    metric
+        ``"log_loss"``, ``"brier_score"``, ``"accuracy"`` or
+        ``"classification_error"``.
+
+    Returns
+    -------
+    dict
+        The winning constructor arguments, ready to splat into :class:`Elo`.
+
+    Examples
+    --------
+    >>> from bscores.baselines import Elo, tune_elo
+    >>> from bscores.datasets import load_afl
+    >>> afl = load_afl(as_frame=False)                        # doctest: +SKIP
+    >>> best = tune_elo(afl.home_team, afl.away_team, afl.outcome, afl.date,
+    ...                 validation_start="2019-01-01",
+    ...                 validation_end="2023-01-01")          # doctest: +SKIP
+    >>> Elo(**best)                                           # doctest: +SKIP
+    """
+    from .backtest import _resolve_start
+    from .metrics import evaluate
+
+    maximise = metric in {"accuracy"}
+    space = dict(DEFAULT_ELO_GRID if grid is None else grid)
+    if not space:
+        raise ValueError("grid must not be empty")
+
+    home_names = np.asarray(list(home), dtype=object)
+    away_names = np.asarray(list(away), dtype=object)
+    results = np.asarray(outcome, dtype=np.float64).ravel()
+    stamps = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
+    if not (home_names.size == away_names.size == results.size == stamps.size):
+        raise ValueError("home, away, outcome and times must be the same length")
+
+    order = np.argsort(stamps, kind="stable")
+    home_names, away_names = home_names[order], away_names[order]
+    results, stamps = results[order], stamps[order]
+
+    start = _resolve_start(stamps, validation_start)
+    stop = stamps.size if validation_end is None else _resolve_start(stamps, validation_end)
+    if not start < stop:
+        raise ValueError(
+            f"validation_end must fall after validation_start ({start} >= {stop})"
+        )
+
+    keys = list(space)
+    best_params: dict[str, Any] | None = None
+    best_score = -np.inf if maximise else np.inf
+    for combination in itertools.product(*(list(space[k]) for k in keys)):
+        params = dict(zip(keys, combination))
+        probability = Elo(**params).run(home_names, away_names, results)
+        score = evaluate(results[start:stop], probability[start:stop])[metric]
+        better = score > best_score if maximise else score < best_score
+        if best_params is None or better:
+            best_params, best_score = params, score
+    assert best_params is not None
+    return best_params

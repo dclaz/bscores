@@ -22,7 +22,7 @@ import time
 
 import numpy as np
 
-from bscores import Elo, evaluate, rolling_forecast
+from bscores import Elo, evaluate, rolling_forecast, tune_elo
 from bscores.datasets import load_afl
 from bscores.metrics import diebold_mariano
 from bscores.tuning import grid_search, refit_best
@@ -205,7 +205,22 @@ def final(matches) -> dict:
     }
     n_test = len(tuned)
     start = len(matches) - n_test
-    elo_probability = Elo().run(matches.home_team, matches.away_team, matches.outcome)[start:]
+    # Give Elo the same tuning budget on the same validation window.  A B-score
+    # model gets home advantage for free — the calibrating logit fits an
+    # intercept — while Elo has to be told about it, so a default Elo is not a
+    # like-for-like baseline no matter how faithful it is to the paper.
+    elo_params = tune_elo(
+        matches.home_team,
+        matches.away_team,
+        matches.outcome,
+        matches.date,
+        validation_start=VALIDATION_START,
+        validation_end=TEST_START,
+    )
+    elo_tuned = Elo(**elo_params).run(
+        matches.home_team, matches.away_team, matches.outcome
+    )[start:]
+    elo_default = Elo().run(matches.home_team, matches.away_team, matches.outcome)[start:]
     base_rate = np.full(n_test, matches.outcome[:start].mean())
 
     print(f"  test set: {n_test} matches\n")
@@ -216,12 +231,19 @@ def final(matches) -> dict:
             f"  {name:<28}{scores['log_loss']:>10.4f}{scores['brier_score']:>9.4f}"
             f"{scores['accuracy']:>10.4f}"
         )
-    for name, probability in (("Elo", elo_probability), ("home base rate", base_rate)):
+    for name, probability in (
+        ("Elo, tuned", elo_tuned),
+        ("Elo, paper defaults", elo_default),
+        ("home base rate", base_rate),
+    ):
         scores = evaluate(matches.outcome[start:], probability)
         print(
             f"  {name:<28}{scores['log_loss']:>10.4f}{scores['brier_score']:>9.4f}"
             f"{scores['accuracy']:>10.4f}"
         )
+
+    settings = ", ".join(f"{k}={v:g}" for k, v in elo_params.items())
+    print(f"\n  Elo was tuned on the same validation window: {settings}")
 
     print("\n  Diebold-Mariano vs the tuned model (negative favours tuned):")
     observed = matches.outcome[start:]
@@ -232,8 +254,9 @@ def final(matches) -> dict:
 
     tuned_loss = tuned.losses("log_loss")
     comparisons = {
+        "Elo, tuned": pointwise(elo_tuned),
+        "Elo, paper defaults": pointwise(elo_default),
         "paper alpha=365": reference["B-score, paper alpha=365"].losses("log_loss"),
-        "Elo": pointwise(elo_probability),
         "home base rate": pointwise(base_rate),
     }
     for name, other in comparisons.items():

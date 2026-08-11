@@ -55,7 +55,7 @@ Where things live
 :mod:`bscores.diagnostics` explain a rating, check calibration, inspect the network
 :mod:`bscores.simulation` Monte Carlo season outcomes
 :mod:`bscores.plotting`  matplotlib figures (optional extra)
-:mod:`bscores.baselines` ``Elo``, for comparison
+:mod:`bscores.baselines` ``Elo`` and ``tune_elo``, for a fair comparison
 :mod:`bscores.datasets`  ``load_afl`` — 3533 AFL matches, bundled
 ======================== ====================================================
 """
@@ -63,7 +63,7 @@ Where things live
 from __future__ import annotations
 
 from .backtest import BacktestResult, rolling_forecast, walk_forward
-from .baselines import Elo
+from .baselines import DEFAULT_ELO_GRID, Elo, tune_elo
 from .calibration import LogitCalibrator, fit_logistic, sigmoid
 from .centrality import (
     EigenResult,
@@ -140,6 +140,8 @@ __all__ = [
     "walk_forward",
     "BacktestResult",
     "Elo",
+    "tune_elo",
+    "DEFAULT_ELO_GRID",
     # tuning
     "grid_search",
     "refit_best",

@@ -288,12 +288,18 @@ archive and scores the winner once on 2023–2026:
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| B-score, tuned | **0.5853** | **0.1993** | **0.6703** |
-| Elo (Kovalchik K-schedule) | 0.6012 | 0.2062 | 0.6570 |
-| B-score, α = 365, hyperbolic | 0.6348 | 0.2201 | 0.6244 |
+| Elo, tuned | **0.5817** | **0.1987** | **0.6848** |
+| B-score, tuned | 0.5853 | 0.1993 | 0.6703 |
+| Elo, paper defaults | 0.6012 | 0.2062 | 0.6570 |
+| B-score, paper defaults (α = 365, hyperbolic) | 0.6348 | 0.2201 | 0.6244 |
 | home-ground base rate | 0.6808 | 0.2417 | 0.5749 |
 
-The tuned settings —
+Both tuned models chose their hyperparameters on the 2019–2022 validation
+window and were scored once here. **Tuning matters more than the choice of
+method:** either system, tuned, beats either system's defaults by a wide
+margin, while the gap between the two tuned models is well inside the noise.
+
+The tuned B-score settings —
 
 ```python
 {"alpha": 120.0, "kernel": "exponential", "transform": "sqrt",
@@ -302,7 +308,23 @@ The tuned settings —
 
 — were also what an earlier search picked on the shorter 2009–2022 archive with
 a *disjoint* validation window, which is a reassuring sign they describe the
-competition rather than the sample.
+competition rather than the sample. Elo's came from `tune_elo` over the same
+window: `home_advantage=45, k_scale=400, k_power=0.4`.
+
+Giving Elo a home-advantage term is what makes the comparison fair rather than
+generous. A B-score model picks up home advantage for free — the calibrating
+logit fits an intercept, and on a home/away competition that intercept *is* the
+home edge — whereas the paper's Elo (Eqs. 4–5) has no such term and must be told.
+Comparing a searched B-score model against a default Elo measures the search,
+not the rating method:
+
+```python
+from bscores import Elo, tune_elo
+
+params = tune_elo(afl.home_team, afl.away_team, afl.outcome, afl.date,
+                  validation_start="2019-01-01", validation_end="2023-01-01")
+Elo(**params).run(afl.home_team, afl.away_team, afl.outcome)
+```
 
 What the search learned about each knob, by best achievable validation
 log-loss:
@@ -334,10 +356,14 @@ kernel choice does. `bscores.weights` provides `margin_weight` and
 `importance_weight`; the search treats them as another grid dimension.
 
 **The gains are worth testing for significance.** A Diebold-Mariano test[^dm]
-against the tuned model returns −5.24 versus the paper's defaults
-(p &lt; 0.0001), −1.98 versus Elo (p = 0.048) and −7.43 versus the base rate
-(p &lt; 0.0001). The first gap is emphatic, the second marginal — worth knowing
-before claiming the method beats Elo on this data.
+against the tuned B-score model returns −5.24 versus the paper's B-score
+defaults (p &lt; 0.0001), −1.98 versus a default Elo (p = 0.048), and −7.43
+versus the base rate (p &lt; 0.0001). Against a *tuned* Elo it returns +0.59
+(p = 0.55) — nominally behind, and nowhere near separable on 828 matches.
+
+So the defensible claim on this data is not that B-scores beat Elo. It is that
+B-scores reach Elo-class accuracy from a completely different construction, and
+that tuning the memory parameter is worth far more than choosing between them.
 
 [^dm]: The [Diebold-Mariano test](https://doi.org/10.1080/07350015.1995.10524599)
     asks whether two forecasters differ in accuracy by more than sampling noise.
@@ -379,7 +405,7 @@ throughput.
 | `bscores.simulation` | `simulate_season` |
 | `bscores.schedule` | `infer_seasons`, `infer_rounds` |
 | `bscores.plotting` | matplotlib figures (optional extra) |
-| `bscores.baselines` | `Elo`, for comparison |
+| `bscores.baselines` | `Elo` and `tune_elo`, for a fair comparison |
 | `bscores.datasets` | `load_afl` — 3533 AFL matches, 2009–2026, bundled |
 
 `numpy` is the only hard requirement. `pandas` powers the DataFrame adapters,
