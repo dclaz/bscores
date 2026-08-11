@@ -271,8 +271,8 @@ def grid_search(
 
     home_names = np.asarray(list(home), dtype=object)
     away_names = np.asarray(list(away), dtype=object)
-    results = np.asarray(outcome, dtype=np.float64).ravel()
-    stamps = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
+    results: np.ndarray = np.asarray(outcome, dtype=np.float64).ravel()
+    stamps: np.ndarray = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
     order = np.argsort(stamps, kind="stable")
     home_names, away_names = home_names[order], away_names[order]
     results, stamps = results[order], stamps[order]

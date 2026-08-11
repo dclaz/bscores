@@ -519,9 +519,20 @@ python examples/afl_explore.py --plot out/
 python scripts/build_afl_dataset.py       # rebuild the bundled data
 ```
 
-See [TUTORIAL.md](TUTORIAL.md) for a guided tour of the API,
-[CONTRIBUTING.md](CONTRIBUTING.md) for the conventions worth knowing, and
+See [TUTORIAL.md](TUTORIAL.md) for a guided tour of the API and
 [CHANGELOG.md](CHANGELOG.md) for what has changed.
+
+**Refreshing the bundled data.** The AFL archive comes from
+<https://www.aussportsbetting.com/historical_data/afl.xlsx>, which sits behind a
+bot challenge and has to be downloaded by hand. Drop the workbook at
+`data/afl.xlsx`, run `python scripts/build_afl_dataset.py`, then re-run
+`python examples/afl_tuning.py` — the documented results and
+`bscores.tuning.AFL_TUNED` are derived from that archive.
+
+**Releasing.** Move the `Unreleased` section of `CHANGELOG.md` under the new
+version, bump `version` in `pyproject.toml` *and* `__version__` in
+`src/bscores/__init__.py`, then tag `vX.Y.Z` and push the tag —
+`.github/workflows/release.yml` builds, verifies and publishes.
 
 ## Licence
 

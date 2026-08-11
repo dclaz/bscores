@@ -300,8 +300,8 @@ def optuna_search(
 
     home_names = np.asarray(list(home), dtype=object)
     away_names = np.asarray(list(away), dtype=object)
-    results = np.asarray(outcome, dtype=np.float64).ravel()
-    stamps = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
+    results: np.ndarray = np.asarray(outcome, dtype=np.float64).ravel()
+    stamps: np.ndarray = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
     if not (home_names.size == away_names.size == results.size == stamps.size):
         raise ValueError("home, away, outcome and times must be the same length")
     if n_trials < 1:
@@ -487,8 +487,8 @@ def optuna_search_elo(
 
     home_names = np.asarray(list(home), dtype=object)
     away_names = np.asarray(list(away), dtype=object)
-    results = np.asarray(outcome, dtype=np.float64).ravel()
-    stamps = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
+    results: np.ndarray = np.asarray(outcome, dtype=np.float64).ravel()
+    stamps: np.ndarray = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
     if not (home_names.size == away_names.size == results.size == stamps.size):
         raise ValueError("home, away, outcome and times must be the same length")
     if n_trials < 1:
