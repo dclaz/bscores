@@ -153,7 +153,7 @@ def suggest_config(trial: Any, *, margins: Any = None, finals: Any = None) -> di
         # Calibration.
         "transform": trial.suggest_categorical("transform", ["identity", "sqrt", "log"]),
         "symmetric": trial.suggest_categorical("symmetric", [False, True]),
-        "regularization": trial.suggest_float("regularization", 1e-4, 0.3, log=True),
+        "regularization": trial.suggest_float("regularization", 1e-4, 1.0, log=True),
         "draw_weight": trial.suggest_float("draw_weight", 0.0, 1.0),
     }
 

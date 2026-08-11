@@ -31,9 +31,9 @@ All notable changes to this project are documented here. The format follows
   for window kernels, margin-scheme parameters only when margin weighting is
   on — which a grid cannot express, and `optuna_search_elo` searches the
   baseline with the same sampler and budget. On AFL, 600 trials each take
-  validation log-loss from the grid's 0.6177 to 0.6125 and held-out test from
-  0.5853 to 0.5765. It also found a regularization of 0.29, an order of
-  magnitude above anything the grid's axis offered.
+  validation log-loss from the grid's 0.6177 to 0.6117 and held-out test from
+  0.5853 to 0.5775. It also found a regularization of 0.46, more than an order
+  of magnitude above anything the grid's axis offered.
 - `examples/afl_optuna.py`.
 
 ### Changed

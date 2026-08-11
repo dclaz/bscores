@@ -289,7 +289,7 @@ score their winner once on 2023–2026:
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| B-score, TPE-tuned (α = 108, exponential, log, MoV-sqrt) | **0.5765** | **0.1958** | 0.6824 |
+| B-score, TPE-tuned (α = 112, exponential, log, MoV-linear) | **0.5775** | **0.1960** | 0.6800 |
 | Elo, TPE-tuned (home advantage 55, K 50, spread 455) | 0.5809 | 0.1985 | **0.6836** |
 | B-score, grid-tuned (α = 120, exponential, sqrt, MoV) | 0.5853 | 0.1993 | 0.6703 |
 | Elo, grid-tuned (home advantage 45, K scale 400, K power 0.4) | 0.5817 | 0.1987 | 0.6848 |
@@ -305,7 +305,7 @@ each with 120 random warm-up trials, the same sampler on both sides.
 and an untuned model is 0.02–0.06 of log-loss; the spread between the two tuned
 models is 0.004, and Diebold-Mariano cannot separate them (−0.73, p = 0.47).
 Note also that a richer search space helps the B-score model more than it helps
-Elo — 600 TPE trials moved B-scores from 0.5853 to 0.5765 but Elo only from
+Elo — 600 TPE trials moved B-scores from 0.5853 to 0.5775 but Elo only from
 0.5817 to 0.5809, because Elo has three knobs and the B-score model has nine.
 
 The tuned B-score settings —
@@ -335,21 +335,27 @@ params = tune_elo(afl.home_team, afl.away_team, afl.outcome, afl.date,
 Elo(**params).run(afl.home_team, afl.away_team, afl.outcome)
 ```
 
-What the search learned about each knob, by best achievable validation
-log-loss:
+What each knob is worth, moving it one at a time around the TPE optimum on the
+validation window:
 
-| knob | best | worst tried | how much it matters |
-| --- | ---: | ---: | --- |
-| `alpha` | 0.6246 @ 120 d | 0.6773 @ 3650 d | most of the available gain |
-| `weights` | 0.6191 margin-linear | 0.6282 finals-weighted | second-biggest lever |
-| `kernel` | 0.6246 exponential | 0.6352 hyperbolic | worth choosing deliberately |
-| `transform` | 0.6246 sqrt | 0.6274 log | small, and free |
-| `regularization` | 0.6177 @ 0.03 | 0.6191 @ 0 | marginal |
-| `draw_weight` | 0.6191 @ 0.5 | 0.6192 @ 1.0 | indistinguishable |
-| `symmetric` | 0.6191 False | 0.6194 True | indistinguishable |
-| `refit_every` | 0.6241 @ 828 | 0.6246 @ 300 | indistinguishable |
+| knob | best | worst tried | span |
+| --- | ---: | ---: | ---: |
+| `alpha` | 0.6117 @ 112 d | 0.6712 @ 1000 d | **0.060** |
+| `kernel` | 0.6117 exponential | 0.6484 hyperbolic | **0.037** |
+| `regularization` | 0.6117 @ 0.46 | 0.6211 @ 0 | 0.009 |
+| margin weighting on/off | 0.6117 on | 0.6184 off | 0.007 |
+| `margin_cap` | 0.6113 @ 6.0 | 0.6165 @ 1.5 | 0.005 |
+| `margin_scale` | 0.6117 @ 24 | 0.6153 @ 6 | 0.004 |
+| `transform` | 0.6117 log | 0.6148 identity | 0.003 |
+| `margin_scheme` | 0.6117 linear | 0.6132 sqrt | 0.002 |
+| `draw_weight` | 0.6114 @ 1.0 | 0.6120 @ 0 | 0.001 |
+| `symmetric` | 0.6117 False | 0.6119 True | 0.000 |
 
-Three things this brings out:
+`alpha` and `kernel` together span 0.10 of log-loss; everything else put
+together spans about 0.02. Both ask the same question — how long a result stays
+informative — once as a half-life and once as a tail shape.
+
+Four things this brings out:
 
 **The decay kernel's tail matters more than its shape.** The paper's hyperbolic
 kernel is heavy-tailed: at α = 365 a decade-old result still carries weight
@@ -359,10 +365,17 @@ exponential kernel's 0.6246, where the untruncated version manages 0.6357.
 Shortening `alpha` alone does not substitute, because that also discards useful
 recent history. `plot_decay` makes the difference visible.
 
-**How much a result counts is a real modelling choice.** The network carries a
-weight per arc, and using it for margin of victory buys about as much as the
-kernel choice does. `bscores.weights` provides `margin_weight` and
-`importance_weight`; the search treats them as another grid dimension.
+**A sensitivity profile only sees inside the range you searched.** The grid
+offered `regularization` up to 0.03 and duly reported it as marginal. That was
+true of the grid, not of the parameter: given room, the search settles on 0.46.
+If a parameter's best value sits at the edge of the range you gave it, widen the
+range before believing the verdict — though see the tutorial for what happened
+when we did, which is its own lesson about validation windows.
+
+**How much a result counts is a real modelling choice, but a second-order one.**
+Turning margin weighting on is worth 0.007 of log-loss against the 0.037 the
+kernel choice is worth — real, and free, but not where the leverage is.
+`bscores.weights` provides `margin_weight` and `importance_weight`.
 
 **The gains are worth testing for significance.** A Diebold-Mariano test[^dm]
 against the TPE-tuned B-score model returns −7.43 versus the base rate

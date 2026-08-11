@@ -474,7 +474,7 @@ elo_tuned = Elo(**params).run(afl.home_team, afl.away_team, afl.outcome)[test]
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| B-score, TPE-tuned | **0.5765** | **0.1958** | 0.6824 |
+| B-score, TPE-tuned (α = 112, exponential, log, MoV-linear) | **0.5775** | **0.1960** | 0.6800 |
 | Elo, TPE-tuned (home advantage 55, K 50, spread 455) | 0.5809 | 0.1985 | **0.6836** |
 | B-score, grid-tuned (α = 120, exponential, sqrt, MoV) | 0.5853 | 0.1993 | 0.6703 |
 | Elo, grid-tuned (home advantage 45, K scale 400, K power 0.4) | 0.5817 | 0.1987 | 0.6848 |
@@ -503,7 +503,7 @@ dm, pvalue = diebold_mariano(
 
 | against | DM | p |
 | --- | ---: | ---: |
-| Elo, TPE-tuned | −0.725 | 0.468 |
+| Elo, TPE-tuned | −0.526 | 0.599 |
 | Elo, paper defaults (no home advantage) | −1.978 | 0.048 |
 | B-score, paper defaults (α = 365, hyperbolic) | −5.235 | <0.0001 |
 | home base rate | −7.426 | <0.0001 |
@@ -571,30 +571,6 @@ NETWORK_KEYS      # ('alpha', 'kernel', 'draw_weight', 'regularization', 'max_ag
 CALIBRATION_KEYS  # ('transform', 'symmetric', 'ridge', 'fit_intercept')
 ```
 
-### Which knobs actually matter
-
-```python
-search.sensitivity("alpha")
-# [(120.0, 0.6246), (30.0, 0.6358), (60.0, 0.639), (365.0, 0.6401), (1095.0, 0.6686)]
-search.sensitivity("kernel")
-# [('exponential', 0.6246), ('hyperbolic', 0.6358)]
-```
-
-`sensitivity` reports the *best achievable* score for each value, so a flat
-profile genuinely means the knob does not matter.
-
-![Tuning](docs/images/tutorial_tuning.png)
-
-```python
-from bscores.plotting import plot_tuning
-plot_tuning(search, "alpha")      # numeric -> line, log x by default
-```
-
-A sharp minimum means tune it. `alpha` spans 0.044 of log-loss across the grid;
-`transform` spans 0.001. `plot_tuning` handles categorical parameters too, but
-for a two-valued knob the `sensitivity` numbers say everything the picture
-would.
-
 ### Searching over weights
 
 Weight vectors go in by name, since they are arrays rather than scalars:
@@ -632,11 +608,11 @@ search = optuna_search(
     n_trials=600, n_startup_trials=120,         # 120 random draws before TPE engages
     seed=0,
 )
-search.best_score      # 0.6125 on validation, against the grid's 0.6177
+search.best_score      # 0.6117 on validation, against the grid's 0.6177
 search.best_params
-# {'alpha': 108.43, 'kernel': 'exponential', 'transform': 'log',
-#  'symmetric': False, 'regularization': 0.2934, 'draw_weight': 0.5279,
-#  'margin_scheme': 'sqrt', 'margin_scale': 9.97, 'margin_cap': 5.53}
+# {'alpha': 112.16, 'kernel': 'exponential', 'transform': 'log',
+#  'symmetric': False, 'regularization': 0.4601, 'draw_weight': 0.4887,
+#  'margin_scheme': 'linear', 'margin_scale': 23.60, 'margin_cap': 4.31}
 ```
 
 `n_startup_trials` is the one to think about. Those are random draws made before
@@ -644,13 +620,82 @@ the TPE model takes over; too few and the sampler commits to whichever corner it
 stumbled into first. A fifth of the budget is a reasonable default, and never
 fewer than a few times the number of parameters.
 
-Two things this found that the grid could not. The regularization it likes is
-**0.29** — an order of magnitude above the 0.03 the grid's coarse axis offered,
-and a real finding rather than a rounding difference. And `margin_scale ≈ 10`
-with a `cap` of 5.5 is a quite different margin curve from the grid's `24`/`3.0`.
+The regularization it likes is **0.46** — more than an order of magnitude above
+the 0.03 the grid's coarse axis could offer, and a real finding rather than a
+rounding difference.
 
 The same discipline applies, more urgently: a smarter search overfits a
-validation window faster than a dumb one, so the test window stays sealed.
+validation window faster than a dumb one, so the test window stays sealed. This
+tutorial has a live example of why. An earlier run of this search capped
+`regularization` at 0.3 and scored **0.6125** on validation; widening the cap to
+1.0 let it reach **0.6117**, a genuine improvement on the window it was
+optimising. On the held-out test window the better-validating model scored
+**0.5775** against the other's **0.5765** — very slightly *worse*. Neither
+difference is significant, which is the point: past a certain depth of search,
+validation gains stop carrying over, and the only way to know is a window you
+did not touch.
+
+### Which knobs actually matter
+
+Two ways to ask, and they answer subtly different questions.
+
+`sensitivity` reports the *best achievable* score for each value of one grid
+key — "if I fix `alpha` here and tune everything else freely, how well can I
+do?":
+
+```python
+search.sensitivity("alpha")
+# [(120.0, 0.6246), (30.0, 0.6358), (60.0, 0.639), (365.0, 0.6401), (1095.0, 0.6686)]
+```
+
+![Tuning](docs/images/tutorial_tuning.png)
+
+```python
+from bscores.plotting import plot_tuning
+plot_tuning(search, "alpha")      # numeric -> line, log x by default
+```
+
+A sharp minimum means tune it; a flat profile genuinely means the knob does not
+matter. `sensitivity` accepts any key that was in the grid.
+
+The other way is to take the best configuration you found and move one
+parameter at a time, which is what you want when deciding where to spend
+attention on the *next* competition. Doing that around the TPE optimum found
+just above, on the same 2019–2022 validation window:
+
+| knob | best | worst tried | span |
+| --- | ---: | ---: | ---: |
+| `alpha` | 0.6117 @ 112 d | 0.6712 @ 1000 d | **0.060** |
+| `kernel` | 0.6117 exponential | 0.6484 hyperbolic | **0.037** |
+| `regularization` | 0.6117 @ 0.46 | 0.6211 @ 0 | 0.009 |
+| margin weighting on/off | 0.6117 on | 0.6184 off | 0.007 |
+| `margin_cap` | 0.6113 @ 6.0 | 0.6165 @ 1.5 | 0.005 |
+| `margin_scale` | 0.6117 @ 24 | 0.6153 @ 6 | 0.004 |
+| `transform` | 0.6117 log | 0.6148 identity | 0.003 |
+| `margin_scheme` | 0.6117 linear | 0.6132 sqrt | 0.002 |
+| `draw_weight` | 0.6114 @ 1.0 | 0.6120 @ 0 | 0.001 |
+| `symmetric` | 0.6117 False | 0.6119 True | 0.000 |
+
+Switching margin weighting off altogether costs 0.007 (0.6184 against 0.6117),
+so *whether* you weight by margin matters more than how you shape the curve.
+
+Three things worth taking from this:
+
+**`alpha` and `kernel` are the whole game.** Together they span 0.10 of
+log-loss; everything else put together spans about 0.02. Both are really the
+same question — how long a result stays informative — asked once as a half-life
+and once as a tail shape.
+
+**A sensitivity profile only sees inside the range you gave it.** The grid in
+this tutorial offered `regularization` up to 0.03 and reported it as marginal.
+That was true *of the grid*, not of the parameter: given room, the search
+settles on 0.46, and zero costs 0.009. The knob was never marginal — the axis
+was too short. If a parameter's best value sits at the edge of the range you
+searched, widen the range before believing the verdict.
+
+**`symmetric` and `draw_weight` are noise here, and that is information too.**
+They cost nothing to leave at their defaults, which frees budget for the knobs
+that move.
 
 ### Report once, on data the search never saw
 
