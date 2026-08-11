@@ -63,6 +63,49 @@ class TestPlotRatings:
         _, ax = plt.subplots()
         assert plot_ratings(history, top=2, ax=ax) is ax
 
+    def test_round_axis_collapses_the_off_season(self, model, fixtures):
+        from bscores.datasets import load_afl
+
+        afl = load_afl(as_frame=False)
+        rated = BScoreModel(alpha=200.0)
+        rated.add_matches(afl.home_team, afl.away_team, afl.outcome, afl.date)
+        dates = np.unique(afl.date)
+        history = rated.score_history(dates)
+
+        by_date = plot_ratings(history, top=2)
+        by_round = plot_ratings(history, top=2, x="round", schedule=afl)
+
+        dates = by_date.get_lines()[0].get_xdata().astype("datetime64[D]").astype(int)
+        gaps_by_date = np.diff(dates)
+        gaps_by_round = np.diff(by_round.get_lines()[0].get_xdata())
+        # The calendar axis has months-long summer jumps; the round axis does not.
+        assert gaps_by_date.max() > 100
+        assert gaps_by_round.max() <= 2
+        assert by_round.get_xlabel() == "season and round"
+
+    def test_round_axis_without_a_schedule_spaces_epochs_evenly(self, model, fixtures):
+        history = model.score_history(fixtures[3])
+        ax = plot_ratings(history, top=2, x="round")
+        np.testing.assert_array_equal(
+            ax.get_lines()[0].get_xdata(), np.arange(history.times.size)
+        )
+
+    def test_explicit_x_positions(self, model, fixtures):
+        history = model.score_history(fixtures[3])
+        positions = np.linspace(0.0, 1.0, history.times.size)
+        ax = plot_ratings(history, top=1, x=positions)
+        np.testing.assert_allclose(ax.get_lines()[0].get_xdata(), positions)
+
+    def test_wrong_length_x_rejected(self, model, fixtures):
+        history = model.score_history(fixtures[3])
+        with pytest.raises(ValueError, match="positions for"):
+            plot_ratings(history, x=np.zeros(3))
+
+    def test_unknown_x_mode_rejected(self, model, fixtures):
+        history = model.score_history(fixtures[3])
+        with pytest.raises(ValueError, match="unknown x axis"):
+            plot_ratings(history, x="vibes")
+
 
 class TestPlotCalibration:
     def test_draws_the_diagonal_and_the_curve(self):

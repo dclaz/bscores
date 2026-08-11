@@ -27,6 +27,7 @@ from .calibration import LogitCalibrator, Transform, fit_logistic, sigmoid
 from .centrality import bonacich_centrality
 from .decay import DecayKernel, as_kernel
 from .network import LossNetwork, NodeIndex
+from .typing import Names, Numbers
 
 __all__ = ["Rating", "RatingHistory", "BScoreModel"]
 
@@ -447,11 +448,11 @@ class BScoreModel:
 
     def rate_many(
         self,
-        winners: Sequence[str],
-        losers: Sequence[str],
+        winners: Names,
+        losers: Names,
         times: Any = None,
         *,
-        weights: Sequence[float] | None = None,
+        weights: Numbers | None = None,
     ) -> BScoreModel:
         """Record many head-to-head results at once.
 
@@ -494,12 +495,12 @@ class BScoreModel:
 
     def add_matches(
         self,
-        home: Sequence[str],
-        away: Sequence[str],
+        home: Names,
+        away: Names,
         outcome: Any,
         times: Any,
         *,
-        weights: Sequence[float] | None = None,
+        weights: Numbers | None = None,
     ) -> BScoreModel:
         """Ingest a home/away fixture list scored on the ``{0, 0.5, 1}`` scale.
 
@@ -614,7 +615,7 @@ class BScoreModel:
         times: Any,
         *,
         inclusive: bool = False,
-        columns: Sequence[int] | None = None,
+        columns: Sequence[int] | np.ndarray | None = None,
     ) -> RatingHistory:
         """B-scores at a series of times, computed causally.
 
@@ -665,8 +666,8 @@ class BScoreModel:
 
     def match_scores(
         self,
-        home: Sequence[str],
-        away: Sequence[str],
+        home: Names,
+        away: Names,
         times: Any,
         *,
         inclusive: bool = False,
@@ -704,13 +705,13 @@ class BScoreModel:
     # ------------------------------------------------------------------
     def fit(
         self,
-        home: Sequence[str],
-        away: Sequence[str],
+        home: Names,
+        away: Names,
         outcome: Any,
         times: Any,
         *,
         ingest: bool = True,
-        weights: Sequence[float] | None = None,
+        weights: Numbers | None = None,
         sample_weight: Any = None,
         model_draws: bool = False,
         symmetric: bool = False,
@@ -867,8 +868,8 @@ class BScoreModel:
 
     def predict_proba(
         self,
-        home: Sequence[str],
-        away: Sequence[str],
+        home: Names,
+        away: Names,
         times: Any,
         *,
         inclusive: bool = False,

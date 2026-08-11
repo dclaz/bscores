@@ -29,6 +29,11 @@ class MatchData:
         Match date, ``datetime64[D]``.
     date_time
         Local kick-off, ``datetime64[s]``.
+    season
+        Calendar year the season ran in.
+    round
+        Round number within the season, continuing through the finals; see
+        :mod:`bscores.schedule`.
     home_team, away_team, venue
         Object arrays of strings.
     home_score, away_score, margin
@@ -43,6 +48,8 @@ class MatchData:
 
     date: np.ndarray
     date_time: np.ndarray
+    season: np.ndarray
+    round: np.ndarray
     home_team: np.ndarray
     away_team: np.ndarray
     venue: np.ndarray
@@ -61,6 +68,13 @@ class MatchData:
     def teams(self) -> list[str]:
         """Sorted list of every competitor appearing in the fixture list."""
         return sorted(set(self.home_team.tolist()) | set(self.away_team.tolist()))
+
+    @property
+    def round_label(self) -> np.ndarray:
+        """``"2023 R5"`` / ``"2023 F2"`` labels, one per match."""
+        from .schedule import round_labels
+
+        return round_labels(self.season, self.round, final=self.final)
 
     def __repr__(self) -> str:
         return (
@@ -124,6 +138,8 @@ def load_afl(*, as_frame: bool = True) -> Any:
     return MatchData(
         date=np.array([row["date"] for row in rows], dtype="datetime64[D]"),
         date_time=np.array([row["date_time"] for row in rows], dtype="datetime64[s]"),
+        season=np.array([int(row["season"]) for row in rows], dtype=np.int64),
+        round=np.array([int(row["round"]) for row in rows], dtype=np.int64),
         home_team=np.array([row["home_team"] for row in rows], dtype=object),
         away_team=np.array([row["away_team"] for row in rows], dtype=object),
         venue=np.array([row["venue"] for row in rows], dtype=object),

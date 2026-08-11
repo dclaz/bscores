@@ -19,6 +19,7 @@ from typing import Any
 
 import numpy as np
 
+from ._time import as_days
 from .diagnostics import calibration_curve
 from .models import BScoreModel, RatingHistory
 
@@ -56,6 +57,8 @@ def plot_ratings(
     *,
     competitors: Sequence[str] | None = None,
     top: int | None = 6,
+    x: Any = "date",
+    schedule: Any = None,
     ax: Any = None,
     **kwargs: Any,
 ) -> Any:
@@ -69,6 +72,19 @@ def plot_ratings(
         Which series to draw.  Defaults to whoever is highest rated at the end.
     top
         How many to keep when ``competitors`` is not given.
+    x
+        ``"date"`` plots against the calendar.  ``"round"`` plots against
+        playing rounds instead, which matters for a seasonal competition: a
+        calendar axis spends every summer drawing a flat line through an
+        off-season in which nothing happened, and on a long archive those gaps
+        take up more width than the seasons do.  An array of positions, one per
+        epoch, is also accepted.
+    schedule
+        Anything carrying ``date``, ``season`` and ``round`` arrays — a
+        :class:`~bscores.datasets.MatchData` will do.  Used by ``x="round"`` to
+        place each epoch on the round axis and to mark season boundaries.
+        Without it, ``"round"`` falls back to spacing the epochs evenly, which
+        removes the gaps but cannot label the seasons.
     """
     ax = _axes(ax, figsize=(10, 5))
     if competitors is not None:
@@ -76,15 +92,71 @@ def plot_ratings(
     else:
         leaders = np.argsort(-history.scores[-1])[: top or len(history.names)]
         names = [history.names[i] for i in leaders]
-    dates = _dates(history.times)
+
+    positions, seasons = _x_positions(history, x, schedule)
     for name in names:
-        ax.plot(dates, history.of(name), label=name, **kwargs)
-    ax.set_xlabel("date")
+        ax.plot(positions, history.of(name), label=name, **kwargs)
+
+    if seasons is not None:
+        _label_seasons(ax, positions, seasons)
+        ax.set_xlabel("season and round")
+    elif isinstance(x, str) and x == "round":
+        ax.set_xlabel("round")
+    else:
+        ax.set_xlabel("date")
+
     ax.set_ylabel("B-score")
     ax.set_title("Ratings over time")
     ax.legend(loc="upper left", fontsize="small", ncols=2)
     ax.margins(x=0.01)
     return ax
+
+
+def _x_positions(
+    history: RatingHistory, x: Any, schedule: Any
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Resolve the x axis, and season labels for it when they are available."""
+    if not isinstance(x, str):
+        positions = np.asarray(x, dtype=np.float64).ravel()
+        if positions.size != history.times.size:
+            raise ValueError(
+                f"x has {positions.size} positions for {history.times.size} epochs"
+            )
+        return positions, None
+
+    if x == "date":
+        return _dates(history.times), None
+    if x != "round":
+        raise ValueError(f"unknown x axis {x!r}; choose 'date', 'round', or an array")
+
+    if schedule is None:
+        return np.arange(history.times.size, dtype=np.float64), None
+
+    from .schedule import round_positions
+
+    match_times = np.atleast_1d(as_days(schedule.date)).astype(np.float64, copy=False)
+    order = np.argsort(match_times, kind="stable")
+    sorted_times = match_times[order]
+    season = np.asarray(schedule.season).ravel()[order]
+    rounds = np.asarray(schedule.round).ravel()[order]
+
+    # Each epoch takes the round of the most recent match at or before it.
+    index = np.clip(
+        np.searchsorted(sorted_times, history.times, side="right") - 1,
+        0,
+        sorted_times.size - 1,
+    )
+    return round_positions(season, rounds)[index].astype(np.float64), season[index]
+
+
+def _label_seasons(ax: Any, positions: np.ndarray, seasons: np.ndarray) -> None:
+    """Tick at the first round of each season and rule a line at the boundary."""
+    changes = np.flatnonzero(np.diff(seasons)) + 1
+    starts = np.concatenate([[0], changes])
+    ax.set_xticks(positions[starts])
+    ax.set_xticklabels([str(seasons[i]) for i in starts], rotation=45, ha="right")
+    for boundary in positions[changes]:
+        ax.axvline(boundary, color="0.9", linewidth=0.8, zorder=0)
 
 
 def plot_calibration(

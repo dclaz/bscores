@@ -184,7 +184,7 @@ def show_simulation(matches, model: BScoreModel) -> None:
     )
 
 
-def save_plots(directory: Path, model, history, result) -> None:
+def save_plots(directory: Path, matches, model, history, result) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -201,7 +201,7 @@ def save_plots(directory: Path, model, history, result) -> None:
 
     directory.mkdir(parents=True, exist_ok=True)
     figures = {
-        "ratings": lambda: plot_ratings(history, top=6),
+        "ratings": lambda: plot_ratings(history, top=6, x="round", schedule=matches),
         "calibration": lambda: plot_calibration(result.outcome, result.probability, bins=8),
         "network": lambda: plot_network(model),
         "backtest": lambda: plot_backtest(result),
@@ -235,7 +235,7 @@ def main() -> None:
 
     if args.plot is not None:
         rule("Figures")
-        save_plots(args.plot, model, history, result)
+        save_plots(args.plot, matches, model, history, result)
 
 
 if __name__ == "__main__":

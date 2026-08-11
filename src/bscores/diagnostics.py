@@ -16,7 +16,6 @@ Everything here answers a question you actually ask of a rating system:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,6 +24,7 @@ import numpy as np
 from .centrality import _has_cycle, bonacich_centrality
 from .metrics import _pair
 from .models import BScoreModel, RatingHistory
+from .typing import Names
 
 __all__ = [
     "Contribution",
@@ -276,11 +276,11 @@ def network_summary(model: BScoreModel, *, at: Any = None) -> dict[str, Any]:
 
 
 def head_to_head(
-    home: Sequence[str],
-    away: Sequence[str],
+    home: Names,
+    away: Names,
     outcome: Any,
     *,
-    competitors: Sequence[str] | None = None,
+    competitors: Names | None = None,
 ) -> dict[str, Any]:
     """Win counts for every pairing in a fixture list.
 

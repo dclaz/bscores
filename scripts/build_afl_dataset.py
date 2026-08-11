@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from bscores.schedule import infer_rounds
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE = REPO_ROOT / "data" / "afl.xlsx"
 DEFAULT_DEST = REPO_ROOT / "src" / "bscores" / "data" / "afl_matches.csv"
@@ -26,6 +28,8 @@ DEFAULT_DEST = REPO_ROOT / "src" / "bscores" / "data" / "afl_matches.csv"
 COLUMNS = [
     "date",
     "date_time",
+    "season",
+    "round",
     "home_team",
     "away_team",
     "venue",
@@ -64,12 +68,23 @@ def build(source: Path = DEFAULT_SOURCE) -> pd.DataFrame:
 
     margin = raw["home_score"].astype("int64") - raw["away_score"].astype("int64")
 
+    home_team = raw["home_team"].astype("string").str.strip()
+    away_team = raw["away_team"].astype("string").str.strip()
+    # The workbook carries no season or round; both are recoverable from the
+    # fixture list itself.  Seasons are labelled by calendar year, which is what
+    # an AFL follower expects, rather than by the 1-based index infer_seasons
+    # returns.
+    season = date.dt.year.astype("int64")
+    round_number = infer_rounds(home_team, away_team, date.to_numpy(), season=season)
+
     out = pd.DataFrame(
         {
             "date": date.dt.date.astype("string"),
             "date_time": date_time.dt.strftime("%Y-%m-%d %H:%M:%S"),
-            "home_team": raw["home_team"].astype("string").str.strip(),
-            "away_team": raw["away_team"].astype("string").str.strip(),
+            "season": season,
+            "round": round_number,
+            "home_team": home_team,
+            "away_team": away_team,
             "venue": raw["venue"].astype("string").str.strip(),
             "home_score": raw["home_score"].astype("int64"),
             "away_score": raw["away_score"].astype("int64"),

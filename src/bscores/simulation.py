@@ -13,13 +13,13 @@ thing one vectorised draw instead of thousands of centrality solves.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
 from .models import BScoreModel
+from .typing import Names
 
 __all__ = ["SeasonSimulation", "simulate_season"]
 
@@ -99,8 +99,8 @@ class SeasonSimulation:
 
 def simulate_season(
     model: BScoreModel,
-    home: Sequence[str],
-    away: Sequence[str],
+    home: Names,
+    away: Names,
     *,
     n_simulations: int = 10_000,
     win_points: float = 4.0,
@@ -194,8 +194,9 @@ def simulate_season(
     away_index = np.array([position[name] for name in away_names])
     home_gain = np.where(is_home_win, win_points, np.where(is_draw, draw_points, 0.0))
     away_gain = np.where(is_home_win, 0.0, np.where(is_draw, draw_points, win_points))
-    np.add.at(points, (slice(None), home_index), home_gain)
-    np.add.at(points, (slice(None), away_index), away_gain)
+    # mypy cannot type the tuple index that ufunc.at accepts here.
+    np.add.at(points, (slice(None), home_index), home_gain)  # type: ignore[arg-type]
+    np.add.at(points, (slice(None), away_index), away_gain)  # type: ignore[arg-type]
 
     # Ties on points are broken at random, so a tie splits the position evenly
     # rather than always favouring whoever sorts first.

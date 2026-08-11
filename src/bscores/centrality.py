@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, overload
 
 import numpy as np
 
@@ -256,8 +256,8 @@ def _power_solve(
                 # No edges reachable from the start vector: the network carries
                 # no information yet, and every score is zero.
                 return EigenResult(np.zeros(n), 0.0, iteration, True, "power")
-            sigma = shift * raw_norm
-            initial_norm = raw_norm
+            sigma = shift * float(raw_norm)
+            initial_norm = float(raw_norm)
         elif not raw_norm > _DEGENERATE_RATIO * initial_norm:
             # Safety net for a network the cycle test cleared but whose spectral
             # radius is numerically zero: there is nothing left to converge to.
@@ -370,6 +370,36 @@ def _dense_solve(matrix: Any, *, regularization: float) -> EigenResult:
         return EigenResult(np.zeros(n), 0.0, 0, True, "dense")
     vector = vector / norm
     return EigenResult(vector, float(np.real(values[index])), 0, True, "dense")
+
+
+@overload
+def bonacich_centrality(
+    weights: Any,
+    *,
+    transposed: bool = ...,
+    x0: np.ndarray | None = ...,
+    tol: float = ...,
+    max_iter: int = ...,
+    shift: float = ...,
+    regularization: float = ...,
+    method: Literal["auto", "power", "dense"] = ...,
+    return_info: Literal[False] = ...,
+) -> np.ndarray: ...
+
+
+@overload
+def bonacich_centrality(
+    weights: Any,
+    *,
+    transposed: bool = ...,
+    x0: np.ndarray | None = ...,
+    tol: float = ...,
+    max_iter: int = ...,
+    shift: float = ...,
+    regularization: float = ...,
+    method: Literal["auto", "power", "dense"] = ...,
+    return_info: Literal[True],
+) -> EigenResult: ...
 
 
 def bonacich_centrality(

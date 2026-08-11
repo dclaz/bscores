@@ -18,7 +18,6 @@ matches you then report on inflates the result by however hard you searched.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +26,7 @@ import numpy as np
 from ._time import as_days
 from .calibration import LogitCalibrator, Transform
 from .models import BScoreModel
+from .typing import Names, Numbers
 
 __all__ = ["BacktestResult", "rolling_forecast", "walk_forward"]
 
@@ -161,8 +161,8 @@ def _resolve_start(times: np.ndarray, initial_train: Any) -> int:
 
 
 def rolling_forecast(
-    home: Sequence[str],
-    away: Sequence[str],
+    home: Names,
+    away: Names,
     outcome: Any,
     times: Any,
     *,
@@ -170,7 +170,7 @@ def rolling_forecast(
     alpha: float = 365.0,
     initial_train: Any = 0.5,
     refit_every: int = 300,
-    weights: Sequence[float] | None = None,
+    weights: Numbers | None = None,
     symmetric: bool = False,
     transform: Transform = "identity",
     ridge: float = 1e-6,

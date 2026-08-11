@@ -34,8 +34,17 @@ jobs:
       - name: Lint
         run: ruff check src tests scripts examples
 
+      - name: Types
+        run: mypy
+
       - name: Test
-        run: pytest -q
+        run: pytest -q --cov --cov-report=term-missing
+
+      - name: Command line interface
+        run: |
+          bscores --version
+          bscores info
+          python -m bscores rate --data afl --alpha 120 --kernel exponential --top 5
 
       - name: Numpy-only install still imports and rates
         run: |

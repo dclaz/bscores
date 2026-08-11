@@ -12,6 +12,8 @@ EXPECTED_TEAMS = 18
 EXPECTED_COLUMNS = [
     "date",
     "date_time",
+    "season",
+    "round",
     "home_team",
     "away_team",
     "venue",
@@ -79,7 +81,7 @@ class TestNumpyLoader:
 
 
 class TestPandasLoader:
-    def test_columns_match_the_r_dataset(self):
+    def test_columns_are_as_published(self):
         pd = pytest.importorskip("pandas")
         frame = load_afl()
         assert isinstance(frame, pd.DataFrame)

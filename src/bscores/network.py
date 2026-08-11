@@ -90,8 +90,8 @@ class NodeIndex:
     def __iter__(self) -> Iterator[str]:
         return iter(self._names)
 
-    def __getitem__(self, index: int) -> str:
-        return self._names[index]
+    def __getitem__(self, index: int | np.integer) -> str:
+        return self._names[int(index)]
 
     @property
     def names(self) -> list[str]:
@@ -391,8 +391,8 @@ class LossNetwork:
             if epoch and epoch % _STREAM_REFRESH == 0:
                 exact = self.matrix(stamp, inclusive=inclusive, transposed=transposed)
                 acc = exact.ravel()
-                side = "right" if inclusive else "left"
-                pos = int(np.searchsorted(event_times, stamp, side=side))
+                refresh_side: Literal["left", "right"] = "right" if inclusive else "left"
+                pos = int(np.searchsorted(event_times, stamp, side=refresh_side))
                 previous = float(stamp)
                 yield exact
                 continue
@@ -400,7 +400,7 @@ class LossNetwork:
                 factor = self.kernel.decay_factor(float(stamp) - previous)
                 if factor != 1.0:
                     acc *= factor
-            side = "right" if inclusive else "left"
+            side: Literal["left", "right"] = "right" if inclusive else "left"
             stop = int(np.searchsorted(event_times, stamp, side=side))
             if stop > pos:
                 ages = float(stamp) - event_times[pos:stop]

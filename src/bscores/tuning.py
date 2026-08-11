@@ -34,6 +34,7 @@ from .backtest import BacktestResult, _resolve_start, walk_forward
 from .calibration import LogitCalibrator
 from .metrics import evaluate
 from .models import BScoreModel
+from .typing import Names
 
 __all__ = [
     "TuningResult",
@@ -197,8 +198,8 @@ def _split(config: dict[str, Any]) -> tuple[tuple, dict[str, Any]]:
 
 
 def grid_search(
-    home: Sequence[str],
-    away: Sequence[str],
+    home: Names,
+    away: Names,
     outcome: Any,
     times: Any,
     *,
@@ -370,8 +371,8 @@ def grid_search(
 
 
 def refit_best(
-    home: Sequence[str],
-    away: Sequence[str],
+    home: Names,
+    away: Names,
     outcome: Any,
     times: Any,
     params: Mapping[str, Any],
