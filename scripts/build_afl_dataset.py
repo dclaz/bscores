@@ -1,15 +1,14 @@
-"""Rebuild the packaged AFL dataset from ``data-raw/afl.xlsx``.
+"""Rebuild the packaged AFL dataset from ``data/afl.xlsx``.
 
-This is the Python replacement for ``data-raw/gen_afl_data.R`` and produces
-``src/bscores/data/afl_matches.csv.gz``, the file shipped with the package and
-returned by :func:`bscores.datasets.load_afl`.
+Produces ``src/bscores/data/afl_matches.csv``, the file shipped with the package
+and returned by :func:`bscores.datasets.load_afl`.
 
 The raw workbook is the historical AFL archive published at
 https://www.aussportsbetting.com/historical_data/afl.xlsx
 
 Usage::
 
-    python scripts/build_afl_dataset.py [--source data-raw/afl.xlsx]
+    python scripts/build_afl_dataset.py [--source data/afl.xlsx]
 """
 
 from __future__ import annotations
@@ -20,11 +19,10 @@ from pathlib import Path
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SOURCE = REPO_ROOT / "data-raw" / "afl.xlsx"
+DEFAULT_SOURCE = REPO_ROOT / "data" / "afl.xlsx"
 DEFAULT_DEST = REPO_ROOT / "src" / "bscores" / "data" / "afl_matches.csv"
 
-#: Columns of the published dataset, in order.  Mirrors the R data frame
-#: ``afl_matches_df`` so the two stay comparable while both exist.
+#: Columns of the published dataset, in order.
 COLUMNS = [
     "date",
     "date_time",
@@ -44,8 +42,8 @@ COLUMNS = [
 def match_outcome(margin: pd.Series) -> pd.Series:
     """Map a home-team margin onto ``{0, 0.5, 1}``.
 
-    Equivalent to the R helper ``pmax(pmin(margin + 0.5, 1), 0)``: a home win
-    scores 1, an away win scores 0 and a draw scores 0.5.
+    A home win scores 1, an away win scores 0 and a draw scores 0.5, which is
+    what a probability-scale loss function needs.
     """
     return (margin + 0.5).clip(lower=0.0, upper=1.0)
 

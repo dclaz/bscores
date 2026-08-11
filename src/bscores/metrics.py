@@ -1,9 +1,7 @@
 """Forecast evaluation.
 
 The paper scores predictions with the Brier score and the log-loss and compares
-models with a Diebold-Mariano test; all three live here.  The loss functions are
-faithful ports of the R package's ``R/loss_functions.R``, including its
-tolerance-clipping behaviour, so numbers stay comparable across the rewrite.
+models with a Diebold-Mariano test; all three live here.
 
 Every function takes ``outcome`` first and ``prediction`` second, and both may
 carry fractional values — a draw scored ``0.5`` is a legitimate outcome.
@@ -27,7 +25,7 @@ __all__ = [
     "roi",
 ]
 
-#: R's ``.Machine$double.neg.eps`` — the default clip used by the R original.
+#: The default clip: the largest float64 eps below 1, i.e. ``2**-53``.
 DEFAULT_TOL = float(np.finfo(np.float64).epsneg)
 
 
@@ -73,8 +71,8 @@ def brier_score(outcome: Any, prediction: Any) -> float:
 def accuracy(outcome: Any, prediction: Any) -> float:
     """Fraction of matches whose rounded forecast matches the result.
 
-    Rounding is half-to-even, as in R, so an exact ``0.5`` forecast is scored as
-    a predicted loss.
+    Rounding is half-to-even, so an exact ``0.5`` forecast is scored as a
+    predicted loss rather than a coin toss.
     """
     y, p = _pair(outcome, prediction)
     return float(np.mean(np.round(p) == y))

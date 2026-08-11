@@ -1,14 +1,3 @@
-# R
-.Rproj.user
-.Rhistory
-.RData
-.Ruserdata
-inst/doc
-doc
-Meta
-docs
-
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -20,6 +9,7 @@ venv/
 .ruff_cache/
 .coverage
 htmlcov/
+.mypy_cache/
 
 # scratch
 resources

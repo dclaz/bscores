@@ -1,13 +1,17 @@
 """B-score diagnostics on the AFL archive.
 
-Runs the paper's evaluation protocol over 2534 AFL matches (2009-2022):
-ratings, an out-of-sample forecast comparison against Elo and the home-ground
-base rate, a Diebold-Mariano test on the loss differences, a sweep over the
-memory parameter, and the betting ROI surface from Definition 1.
+Runs the paper's evaluation protocol over 2534 AFL matches (2009-2022): ratings,
+an out-of-sample forecast comparison against Elo and the home-ground base rate, a
+Diebold-Mariano test on the loss differences, and the betting ROI surface from
+Definition 1.
+
+For choosing the hyperparameters rather than evaluating a fixed set, see
+``examples/afl_tuning.py``; for exploring the ratings themselves, see
+``examples/afl_explore.py``.
 
 Usage::
 
-    python examples/afl_diagnostics.py [--alpha 365] [--quick]
+    python examples/afl_diagnostics.py [--alpha 120] [--kernel exponential]
 """
 
 from __future__ import annotations
@@ -17,27 +21,17 @@ import time
 
 import numpy as np
 
-from bscores import (
-    BScoreModel,
-    Elo,
-    diebold_mariano,
-    evaluate,
-    roi,
-    rolling_forecast,
-    sweep_alpha,
-)
+from bscores import BScoreModel, Elo, diebold_mariano, evaluate, roi, rolling_forecast
 from bscores.datasets import load_afl
-
-ALPHA_GRID = [7.0, 14.0, 21.0, 30.0, 60.0, 90.0, 180.0, 365.0, 730.0, 1825.0, 3650.0]
 
 
 def rule(title: str) -> None:
     print(f"\n{title}\n{'-' * len(title)}")
 
 
-def show_ratings(matches, alpha: float) -> None:
-    rule(f"Ratings as at {matches.date.max()} (alpha = {alpha:g} days)")
-    model = BScoreModel(alpha=alpha)
+def show_ratings(matches, alpha: float, kernel: str) -> None:
+    rule(f"Ratings as at {matches.date.max()} ({kernel}, half-life {alpha:g} days)")
+    model = BScoreModel(alpha=alpha, kernel=kernel)
     model.add_matches(matches.home_team, matches.away_team, matches.outcome, matches.date)
     print(f"{'#':>2}  {'team':<18}{'B-score':>9}{'ordinal':>9}{'played':>8}{'won':>7}")
     for rating in model.leaderboard():
@@ -48,15 +42,15 @@ def show_ratings(matches, alpha: float) -> None:
     print(f"\n||scores||_2 = {np.linalg.norm(model.scores()):.6f}  (unit by construction)")
 
 
-def show_forecasts(matches, alpha: float) -> tuple[object, np.ndarray]:
-    rule(f"Out-of-sample forecasts (alpha = {alpha:g}, refit every 300 matches)")
+def show_forecasts(matches, alpha: float, kernel: str) -> tuple[object, np.ndarray]:
+    rule(f"Out-of-sample forecasts ({kernel}, half-life {alpha:g}, refit every 300)")
     started = time.perf_counter()
     result = rolling_forecast(
         matches.home_team,
         matches.away_team,
         matches.outcome,
         matches.date,
-        alpha=alpha,
+        model=BScoreModel(alpha=alpha, kernel=kernel),
         initial_train=0.5,
         refit_every=300,
     )
@@ -101,30 +95,6 @@ def show_forecasts(matches, alpha: float) -> tuple[object, np.ndarray]:
     return result, base_rate
 
 
-def show_alpha_sweep(matches) -> None:
-    rule("Memory parameter sweep (out-of-sample log-loss)")
-    rows = sweep_alpha(
-        matches.home_team,
-        matches.away_team,
-        matches.outcome,
-        matches.date,
-        ALPHA_GRID,
-        initial_train=0.5,
-        refit_every=300,
-    )
-    print(f"{'alpha (days)':>13}{'log-loss':>10}{'Brier':>9}{'accuracy':>10}")
-    for row in sorted(rows, key=lambda r: r["alpha"]):
-        marker = "  <- best" if row is rows[0] else ""
-        print(
-            f"{row['alpha']:>13.0f}{row['log_loss']:>10.4f}{row['brier_score']:>9.4f}"
-            f"{row['accuracy']:>10.4f}{marker}"
-        )
-    print(
-        "\nThe paper uses alpha = 365 to mirror the 52-week ATP/WTA ranking window.\n"
-        "An AFL season is 22 rounds, and form turns over faster than that."
-    )
-
-
 def show_betting(matches, result) -> None:
     rule("Betting ROI, Definition 1 (flat 1-unit stakes, best available odds)")
     start = len(matches) - len(result)
@@ -157,18 +127,20 @@ def show_betting(matches, result) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--alpha", type=float, default=365.0, help="memory parameter, in days")
-    parser.add_argument("--quick", action="store_true", help="skip the alpha sweep")
+    parser.add_argument("--alpha", type=float, default=120.0, help="half-life, in days")
+    parser.add_argument(
+        "--kernel", default="exponential", choices=["hyperbolic", "exponential", "uniform"]
+    )
+    parser.add_argument("--quick", action="store_true", help="skip the betting surface")
     args = parser.parse_args()
 
     matches = load_afl(as_frame=False)
     print(f"{matches!r}")
 
-    show_ratings(matches, args.alpha)
-    result, _ = show_forecasts(matches, args.alpha)
+    show_ratings(matches, args.alpha, args.kernel)
+    result, _ = show_forecasts(matches, args.alpha, args.kernel)
     if not args.quick:
-        show_alpha_sweep(matches)
-    show_betting(matches, result)
+        show_betting(matches, result)
 
 
 if __name__ == "__main__":

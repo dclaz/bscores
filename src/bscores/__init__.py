@@ -35,16 +35,55 @@ On a real fixture list, calibrate the logit (Eq. 3) and forecast out of sample:
 ... )
 >>> result.metrics()["log_loss"] < 0.69
 True
+
+Tune before you trust a default: ``alpha`` moves accuracy further than the
+choice of rating system does.  See :mod:`bscores.tuning`.
+
+Where things live
+-----------------
+
+======================== ====================================================
+:mod:`bscores.models`    ``BScoreModel``, ``Rating``, ``RatingHistory``
+:mod:`bscores.network`   ``LossNetwork`` — dated results in, ``W_t`` out
+:mod:`bscores.centrality` the eigenvector solve, and its degenerate fallback
+:mod:`bscores.decay`     ``Hyperbolic``, ``Exponential``, ``Uniform``, ``Window``
+:mod:`bscores.weights`   margin-of-victory and match-importance arc weights
+:mod:`bscores.calibration` the logit that turns ratings into probabilities
+:mod:`bscores.metrics`   log-loss, Brier, Diebold-Mariano, betting ROI
+:mod:`bscores.backtest`  ``rolling_forecast`` — expanding-window evaluation
+:mod:`bscores.tuning`    ``grid_search`` over a validation window
+:mod:`bscores.diagnostics` explain a rating, check calibration, inspect the network
+:mod:`bscores.simulation` Monte Carlo season outcomes
+:mod:`bscores.plotting`  matplotlib figures (optional extra)
+:mod:`bscores.baselines` ``Elo``, for comparison
+:mod:`bscores.datasets`  ``load_afl`` — 2534 AFL matches, bundled
+======================== ====================================================
 """
 
 from __future__ import annotations
 
-from .backtest import BacktestResult, rolling_forecast, sweep_alpha
+from .backtest import BacktestResult, rolling_forecast, walk_forward
 from .baselines import Elo
 from .calibration import LogitCalibrator, fit_logistic, sigmoid
-from .centrality import EigenResult, bonacich_centrality, in_strength, out_strength
+from .centrality import (
+    EigenResult,
+    bonacich_centrality,
+    in_strength,
+    neumann_centrality,
+    out_strength,
+)
 from .datasets import load_afl
 from .decay import DecayKernel, Exponential, Hyperbolic, Uniform, Window, as_kernel
+from .diagnostics import (
+    calibration_curve,
+    explain_rating,
+    head_to_head,
+    network_summary,
+    rating_churn,
+    reliability_table,
+    sharpness,
+    upset_rate,
+)
 from .metrics import (
     accuracy,
     brier_score,
@@ -56,8 +95,11 @@ from .metrics import (
 )
 from .models import BScoreModel, Rating, RatingHistory
 from .network import LossNetwork, NodeIndex
+from .simulation import SeasonSimulation, simulate_season
+from .tuning import TuningResult, grid_search, refit_best
+from .weights import importance_weight, margin_weight
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "__version__",
@@ -69,16 +111,19 @@ __all__ = [
     "LossNetwork",
     "NodeIndex",
     "bonacich_centrality",
+    "neumann_centrality",
     "in_strength",
     "out_strength",
     "EigenResult",
-    # decay kernels
+    # decay kernels and arc weights
     "DecayKernel",
     "Hyperbolic",
     "Exponential",
     "Uniform",
     "Window",
     "as_kernel",
+    "margin_weight",
+    "importance_weight",
     # calibration
     "LogitCalibrator",
     "fit_logistic",
@@ -92,9 +137,25 @@ __all__ = [
     "diebold_mariano",
     "roi",
     "rolling_forecast",
-    "sweep_alpha",
+    "walk_forward",
     "BacktestResult",
     "Elo",
+    # tuning
+    "grid_search",
+    "refit_best",
+    "TuningResult",
+    # diagnostics
+    "explain_rating",
+    "calibration_curve",
+    "reliability_table",
+    "sharpness",
+    "network_summary",
+    "head_to_head",
+    "rating_churn",
+    "upset_rate",
+    # simulation
+    "simulate_season",
+    "SeasonSimulation",
     # data
     "load_afl",
 ]

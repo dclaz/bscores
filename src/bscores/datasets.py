@@ -1,7 +1,7 @@
 """Bundled data.
 
-The package ships the AFL archive the R version used, so the examples, tests and
-diagnostics all run offline.  Regenerate it from the raw workbook with
+The package ships an AFL match archive so the examples, tests and diagnostics
+all run offline.  Regenerate it from the raw workbook with
 ``python scripts/build_afl_dataset.py``.
 """
 
@@ -90,8 +90,7 @@ def load_afl(*, as_frame: bool = True) -> Any:
     """Load AFL match results and betting odds, 2009-06-19 to 2022-04-10.
 
     2534 matches between 18 teams, sorted chronologically.  Sourced from
-    https://www.aussportsbetting.com/historical_data/afl.xlsx and processed to
-    match the R package's ``afl_matches_df`` column for column.
+    https://www.aussportsbetting.com/historical_data/afl.xlsx.
 
     Parameters
     ----------

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from bscores import BScoreModel
-from bscores.backtest import _resolve_start, rolling_forecast, sweep_alpha
+from bscores.backtest import _resolve_start, rolling_forecast
 
 
 def competition(n_teams=8, rounds=8, seed=0, upset_rate=0.25):
@@ -245,22 +245,3 @@ class TestOptions:
         # invariant to that, so the forecasts should not move.
         plain = rolling_forecast(home, away, outcome, times, alpha=200.0)
         np.testing.assert_allclose(weighted.probability, plain.probability, atol=1e-8)
-
-
-class TestSweepAlpha:
-    def test_sorted_best_first(self):
-        home, away, outcome, times = competition(n_teams=6, rounds=8, seed=7)
-        rows = sweep_alpha(home, away, outcome, times, [50.0, 200.0, 1000.0])
-        assert len(rows) == 3
-        assert [r["log_loss"] for r in rows] == sorted(r["log_loss"] for r in rows)
-        assert set(rows[0]) >= {"alpha", "log_loss", "brier_score", "accuracy"}
-
-    def test_accuracy_sorts_the_other_way(self):
-        home, away, outcome, times = competition(n_teams=6, rounds=8, seed=8)
-        rows = sweep_alpha(home, away, outcome, times, [50.0, 1000.0], metric="accuracy")
-        assert rows[0]["accuracy"] >= rows[-1]["accuracy"]
-
-    def test_unknown_metric_rejected(self):
-        home, away, outcome, times = competition(n_teams=4, rounds=4)
-        with pytest.raises(ValueError, match="unknown metric"):
-            sweep_alpha(home, away, outcome, times, [100.0], metric="vibes")

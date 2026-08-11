@@ -81,6 +81,22 @@ class Hyperbolic(DecayKernel):
         Memory parameter in days.  ``f(alpha) == 0.5``, so ``alpha`` *is* the
         half-life.  The paper uses 365 to mirror the ATP/WTA ranking window.
         ``inf`` gives every result equal weight.
+
+    Notes
+    -----
+    The tail is heavier than the formula suggests, and it matters.  At
+    ``alpha=365`` a ten-year-old result still carries weight 0.09; a long
+    archive holds thousands of them, and collectively they drown out recent
+    form.  On the bundled AFL data this costs about 0.01 of log-loss against
+    :class:`Exponential`, and either fix closes the gap:
+
+    * swap to :class:`Exponential`, whose tail decays properly, or
+    * keep this kernel and pass ``max_age`` to
+      :class:`~bscores.network.LossNetwork` to truncate it.
+
+    Tuning ``alpha`` alone does not fix it: a short half-life suppresses the
+    tail only by also discarding useful recent history.  See
+    :mod:`bscores.tuning`.
     """
 
     __slots__ = ("alpha",)

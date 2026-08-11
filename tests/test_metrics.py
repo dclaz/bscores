@@ -74,8 +74,8 @@ class TestAccuracy:
         assert accuracy([1.0, 0.0, 1.0, 1.0], [0.9, 0.4, 0.6, 0.2]) == pytest.approx(0.75)
 
     def test_rounds_half_to_even_like_r(self):
-        # round(0.5) is 0 in R and in numpy, so an exact coin flip is scored
-        # as a predicted loss.
+        # numpy rounds half to even, so an exact coin flip is scored as a
+        # predicted loss rather than a toss-up.
         assert accuracy([0.0], [0.5]) == 1.0
         assert accuracy([1.0], [0.5]) == 0.0
 

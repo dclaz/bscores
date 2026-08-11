@@ -63,4 +63,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
       - name: AFL diagnostics
-        run: python examples/afl_diagnostics.py --alpha 21
+        run: python examples/afl_diagnostics.py --alpha 120 --quick
+
+      - name: AFL hyperparameter search
+        run: python examples/afl_tuning.py --stage final
+
+      - name: AFL exploration
+        run: python examples/afl_explore.py --plot "$RUNNER_TEMP/figures"

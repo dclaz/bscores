@@ -1,38 +1,40 @@
 # bscores
 
-A Python implementation of **B-scores** — rating and forecasting pairwise
-contests using the eigenvector centrality of the network of results.
+Rate and forecast pairwise contests using the eigenvector centrality of the
+network of results.
 
 > Arcagni, A., Candila, V. & Grassi, R. (2023). *A new model for predicting the
 > winner in tennis based on the eigenvector centrality.* Annals of Operations
 > Research 325, 615–632. <https://doi.org/10.1007/s10479-022-04594-7>
 
 Every result becomes an arc in a directed network, pointing from the loser to
-the winner and weighted by how recently it happened. A competitor's rating is
-its entry in the principal eigenvector of that network, so a rating is high when
-the competitors it has beaten are themselves highly rated. The consequence that
-sets the method apart from Elo, Glicko and Bradley-Terry:
+the winner and weighted by how recently it happened. A competitor's rating — its
+**B-score** — is its entry in the principal eigenvector of that network, so a
+rating is high when the competitors it has beaten are themselves highly rated.
+The consequence that sets the method apart from Elo, Glicko and Bradley-Terry:
 
 > every new match updates the full network, rather than only the ratings of the
 > players involved
 
-A team that does not play still moves, because the standing of everyone it has
+A side that does not play still moves, because the standing of everyone it has
 beaten moves.
 
 ## Install
 
 ```bash
-pip install -e .            # numpy only
-pip install -e ".[dev]"     # + pandas, scipy, pytest, ruff
+pip install -e .              # numpy only
+pip install -e ".[all]"       # + pandas, scipy, matplotlib
+pip install -e ".[dev]"       # + pytest, ruff
 ```
 
-`numpy` is the only hard requirement. `pandas` is needed for the DataFrame
-loaders, `scipy` only for the sparse path (thousands of competitors).
+`numpy` is the only hard requirement. `pandas` is for the DataFrame adapters,
+`scipy` for the sparse path (thousands of competitors), `matplotlib` for
+`bscores.plotting`.
 
 ## Quick start
 
-The API deliberately mirrors [openskill.py](https://github.com/vivekjoshy/openskill.py),
-so swapping rating systems is mostly an import change.
+The API mirrors [openskill.py](https://github.com/vivekjoshy/openskill.py), so
+swapping rating systems is mostly an import change.
 
 ```python
 from bscores import BScoreModel
@@ -71,10 +73,9 @@ model.rating("Essendon").score            # 0.2999
 Essendon's rating fell by a quarter without taking the field: its one win was
 over Geelong, and Geelong just lost again. Elo would not have moved it at all.
 
-`Rating` carries `.score` (the B-score, an entry in a unit-norm vector) and
-`.ordinal()` for a friendlier display scale. Other openskill-shaped calls —
-`rate_result`, `predict_draw`, multi-member teams, explicit `ranks` — behave as
-you would expect; see the docstrings.
+`Rating` carries `.score` (an entry in a unit-norm vector) and `.ordinal()` for
+a friendlier display scale. `rate_result`, `predict_draw`, multi-member teams and
+explicit `ranks` all behave as you would expect; see the docstrings.
 
 ## Fitting and forecasting
 
@@ -88,66 +89,167 @@ Keeping $\beta_1$ and $\beta_2$ free rather than forcing $\beta_2 = -\beta_1$
 matters for a home/away sport: the intercept absorbs home advantage.
 
 ```python
-from bscores import BScoreModel
+from bscores import BScoreModel, rolling_forecast
 from bscores.datasets import load_afl
 
 afl = load_afl(as_frame=False)
-model = BScoreModel(alpha=21.0).fit(
+model = BScoreModel(alpha=120.0, kernel="exponential").fit(
     afl.home_team, afl.away_team, afl.outcome, afl.date
 )
 model.predict_win([["Melbourne"], ["Carlton"]])     # calibrated home-win probability
+
+result = rolling_forecast(                          # expanding-window evaluation
+    afl.home_team, afl.away_team, afl.outcome, afl.date,
+    alpha=120.0, initial_train=0.5, refit_every=300,
+)
+result.metrics()      # {'log_loss': ..., 'brier_score': ..., 'accuracy': ...}
 ```
 
 `fit` ingests the fixtures and calibrates in one pass. The features it
 calibrates on are computed *causally* — each match sees only results that
 happened strictly before it — so ingesting first cannot leak.
 
-## Evaluating out of sample
+## Tune before you trust a default
 
-`rolling_forecast` runs the paper's protocol: fit on everything up to a cut-off,
-forecast the next block, fold it in, refit, repeat.
+`alpha` moves accuracy further than the choice of rating system does. The paper
+fixes it at 365 to mirror the 52-week ATP/WTA ranking window and flags the
+choice as open; on a competition with a different rhythm it is simply wrong.
 
 ```python
-from bscores import rolling_forecast, sweep_alpha
+from bscores.tuning import grid_search, refit_best
+from bscores.weights import margin_weight
 
-result = rolling_forecast(
+options = {"mov": margin_weight(afl.margin, scheme="linear", scale=24.0, cap=3.0)}
+search = grid_search(
     afl.home_team, afl.away_team, afl.outcome, afl.date,
-    alpha=21.0, initial_train=0.5, refit_every=300,
+    grid={
+        "alpha": [30.0, 60.0, 120.0, 365.0],
+        "kernel": ["hyperbolic", "exponential"],
+        "transform": ["identity", "sqrt"],
+        "weights": ["mov"],
+    },
+    weight_options=options,
+    validation_start="2016-01-01", validation_end="2019-01-01",   # tune here
 )
-result.metrics()          # {'log_loss': 0.6296, 'brier_score': 0.2182, ...}
-result.to_frame()         # per-match forecasts, ratings and training-set sizes
+search.best_params            # {'alpha': 120.0, 'kernel': 'exponential', ...}
+search.sensitivity("alpha")   # how much does this knob actually matter?
 
-sweep_alpha(afl.home_team, afl.away_team, afl.outcome, afl.date,
-            [7, 21, 90, 365, 1095])     # tune the memory parameter
+held_out = refit_best(        # ... report on a window the search never saw
+    afl.home_team, afl.away_team, afl.outcome, afl.date,
+    search.best_params, weight_options=options, test_start="2019-01-01",
+)
 ```
 
-## Results on the bundled AFL data
+The three-way split is the point. Tuning and reporting on the same matches
+inflates the result by however hard you searched:
 
-2534 AFL matches, 2009–2022, forecasting the last 1267 out of sample
-(`python examples/afl_diagnostics.py`):
+```
+2009-06 .. 2015-12   warm-up      1301 matches, the model builds a history
+2016-01 .. 2018-12   validation    621 matches, the search runs here
+2019-01 .. 2022-04   test          612 matches, reported once at the end
+```
+
+Configurations that differ only in how the logit is fitted share one causal
+rating pass, so a 480-point grid costs 120 sweeps, not 480.
+
+## What the sweep found on AFL
+
+`python examples/afl_tuning.py`. Scored on the held-out 2019–2022 window:
 
 | model | log-loss | Brier | accuracy |
 | --- | ---: | ---: | ---: |
-| B-score, α = 21 days | **0.6296** | **0.2182** | **0.6440** |
-| B-score, α = 365 days (the paper's) | 0.6540 | 0.2292 | 0.6077 |
-| Elo (Kovalchik K-schedule) | 0.6508 | 0.2267 | 0.6172 |
-| home-ground base rate | 0.6836 | 0.2433 | 0.5651 |
+| B-score, tuned | **0.6358** | **0.2200** | **0.6503** |
+| B-score, paper defaults (α = 365, hyperbolic) | 0.6735 | 0.2386 | 0.5605 |
+| Elo (Kovalchik K-schedule) | 0.6729 | 0.2373 | 0.5931 |
+| home-ground base rate | 0.6872 | 0.2450 | 0.5523 |
 
-At α = 21 the Diebold-Mariano test puts B-scores significantly ahead of Elo
-(DM = −2.49, p = 0.013). At the paper's α = 365 the two are statistically
-indistinguishable (DM = +0.36, p = 0.72) — a season of AFL is 22 rounds, and
-form turns over much faster than the 52-week ATP/WTA ranking window α = 365 was
-chosen to mirror. The paper flags the choice of α as an open question; on this
-competition the answer is "much shorter".
+Diebold-Mariano against the tuned model: −3.08 vs the paper's defaults
+(p = 0.002), −3.00 vs Elo (p = 0.003). The winning configuration:
 
-Two things worth stating plainly:
+```python
+{"alpha": 120.0, "kernel": "exponential", "transform": "sqrt",
+ "regularization": 0.03, "weights": "mov"}      # bscores.tuning.AFL_TUNED
+```
 
-- **The betting results do not carry over.** Applying Definition 1's staking
-  rule to the bundled closing odds gives a negative ROI at every threshold
-  tested (−0.7% to −4.7%). The paper's positive returns were on tennis markets;
-  the AFL head-to-head market in this sample is not beatable this way.
-- **α matters more than anything else here.** It moves log-loss by more than the
-  entire gap between B-scores and Elo.
+Which knobs actually mattered, by best achievable validation log-loss:
+
+| knob | best | worst tried | verdict |
+| --- | ---: | ---: | --- |
+| `alpha` | 0.5856 @ 120 d | 0.6734 @ 3650 d | dominant — always tune it |
+| `kernel` | 0.5971 exponential | 0.6070 hyperbolic | worth switching |
+| `weights` | 0.5879 margin-linear | 0.5978 finals-weighted | second-biggest lever |
+| `transform` | 0.5879 sqrt | 0.5939 identity | small but free |
+| `regularization` | 0.5856 @ 0.03 | 0.5871 @ 0 | marginal |
+| `draw_weight` | 0.5879 @ 0.5 | 0.5881 @ 0 | noise — leave it |
+| `symmetric` | 0.5879 True | 0.5883 False | noise — leave it |
+| `refit_every` | 0.5971 @ 300 | 0.5977 @ 100 | noise — leave it |
+
+Three findings worth stating plainly:
+
+- **The hyperbolic kernel's problem is its tail, not its shape.** At α = 365 a
+  decade-old result still carries weight 0.09, and there are thousands of them.
+  Capping it — `Hyperbolic(120)` with `max_age=365` — scores 0.5973, matching the
+  exponential kernel's 0.5971. Either fix works; doing neither costs a full
+  0.01 of log-loss.
+- **Margin of victory is worth as much as the kernel choice.** A 100-point
+  thrashing says more than a one-point escape, and `bscores.weights.margin_weight`
+  is the cheapest accuracy on offer.
+- **The betting result does not replicate.** Applying Definition 1's staking rule
+  to the bundled closing odds gives a negative ROI at every threshold tested
+  (−3.5% to −5.8% for the tuned model, −0.7% to −4.7% at the paper's defaults).
+  The paper's positive returns were on tennis markets; the AFL head-to-head
+  market in this sample is not beatable this way, and tuning the model for
+  accuracy made the betting result *worse*, not better.
+
+Test-window log-loss is worse than validation-window log-loss for *every* model:
+2019–2022 was simply less predictable. Only the gaps within a window mean
+anything.
+
+## Exploring ratings
+
+`python examples/afl_explore.py --plot out/`
+
+**Why is a competitor rated where it is?** The eigenvector equation says a
+rating *is* the weighted sum of the ratings pointing at it, so it decomposes
+exactly — no attribution heuristic required.
+
+```python
+from bscores.diagnostics import explain_rating
+
+for part in explain_rating(model, "Melbourne", top=3):
+    print(part.opponent, f"{part.share:.1%}", part.opponent_score)
+```
+
+**Is the network healthy enough to rate on?**
+
+```python
+from bscores.diagnostics import network_summary
+network_summary(model)
+# {'competitors': 18, 'arcs': 306, 'density': 1.0, 'has_cycle': True,
+#  'spectral_radius': 7.47, 'unrated': 0, 'solver': 'power', ...}
+```
+
+**Are the probabilities honest?** `calibration_curve`, `reliability_table`,
+`sharpness` and `upset_rate`. Calibration alone is easy to fake by always
+predicting the base rate; sharpness is the other half of the picture.
+
+**How much does the order churn?** `rating_churn` — a short memory tracks form
+and churns, a long one is steadier. On AFL, mean rank change per match day is
+0.96 at a 30-day half-life, 0.43 at 120 days and 0.12 at 1095.
+
+**What are our chances?** `simulate_season` plays the remaining fixtures a few
+thousand times:
+
+```python
+from bscores.simulation import simulate_season
+season = simulate_season(model, home_fixtures, away_fixtures, n_simulations=20_000)
+season.top_n_probability(4)      # {'Melbourne': 0.848, 'Sydney': 0.622, ...}
+season.position_distribution("Geelong")
+```
+
+**Figures.** `bscores.plotting` gives `plot_ratings`, `plot_calibration`,
+`plot_tuning`, `plot_network`, `plot_backtest` and `plot_decay`. Each takes an
+optional `ax` and returns it, so they compose into a dashboard.
 
 ## What is in the box
 
@@ -157,30 +259,36 @@ Two things worth stating plainly:
 | `bscores.network` | `LossNetwork`: dated results in, $W_t$ out (Eq. 1) |
 | `bscores.centrality` | `bonacich_centrality` (Eq. 11), solvers, `neumann_centrality` |
 | `bscores.decay` | `Hyperbolic` (Eq. 2), `Exponential`, `Uniform`, `Window` |
+| `bscores.weights` | `margin_weight`, `importance_weight` — per-result arc weights |
 | `bscores.calibration` | `LogitCalibrator` (Eq. 3), `fit_logistic` — IRLS, numpy only |
 | `bscores.metrics` | `log_loss`, `brier_score`, `accuracy`, `diebold_mariano`, `roi` |
-| `bscores.backtest` | `rolling_forecast`, `sweep_alpha` |
+| `bscores.backtest` | `rolling_forecast`, `walk_forward`, `sweep_alpha` |
+| `bscores.tuning` | `grid_search`, `refit_best`, `AFL_TUNED` |
+| `bscores.diagnostics` | `explain_rating`, calibration, network health, churn |
+| `bscores.simulation` | `simulate_season` |
+| `bscores.plotting` | matplotlib figures (optional extra) |
 | `bscores.baselines` | `Elo` (Eqs. 4–5), for comparison |
 | `bscores.datasets` | `load_afl` — 2534 AFL matches, bundled |
 
 ## Design notes
 
 **Causality is enforced, not assumed.** `score_history`, `match_scores`,
-`predict_proba` and `rolling_forecast` all evaluate the network with
-`inclusive=False`: a rating used to forecast a match starting at time *t* is
+`predict_proba`, `rolling_forecast` and `grid_search` all evaluate the network
+with `inclusive=False`: a rating used to forecast a match starting at time *t* is
 built only from results strictly before *t*, so same-round fixtures cannot see
-each other. The test suite rewrites the second half of a fixture list and
-asserts the first half's forecasts do not move.
+each other. The test suite rewrites the second half of a fixture list and asserts
+the first half's forecasts do not move, and does the same for the validation and
+test windows of a search.
 
-**Degenerate networks are handled explicitly.** Before any competitor has beaten
-someone who beat someone else in a loop, the loss matrix is nilpotent: its
-spectral radius is zero and Eq. 11 has no solution. Power iteration would crawl
-towards an arbitrary basis vector. `bonacich_centrality` tests for a cycle up
-front — one sparsity sweep, essentially free when a cycle exists — and falls
-back to a finite Neumann series that grades the same "beat strong opponents"
-idea and terminates in at most *n* steps. The choice is reported in
-`EigenResult.method`, never silently. Pass `regularization=ε` to force the
-network irreducible and stay on the eigenvector throughout.
+**Degenerate networks are handled explicitly.** Before anyone has beaten someone
+who beat someone else in a loop, the loss matrix is nilpotent: its spectral
+radius is zero and Eq. 11 has no solution. Power iteration would crawl towards an
+arbitrary basis vector. `bonacich_centrality` tests for a cycle up front — one
+sparsity sweep, essentially free when a cycle exists — and falls back to a finite
+Neumann series that grades the same "beat strong opponents" idea and terminates
+in at most *n* steps. The choice is reported in `EigenResult.method`, never
+silently. Pass `regularization=ε` to force the network irreducible and stay on the
+eigenvector throughout.
 
 **Performance.** `python examples/benchmark.py`:
 
@@ -204,7 +312,7 @@ half a second. What makes that work:
   opening round converge instead of oscillating.
 - Memoryless kernels (`Exponential`, `Uniform`) age the accumulator in place
   instead of rebuilding it — exact, and roughly 30% faster on long histories.
-- `max_age` bounds the work per epoch when the hyperbolic tail is not worth
+- `max_age` bounds the work per epoch when a heavy kernel tail is not worth
   paying for.
 - Networks above `dense_max_nodes` competitors switch to SciPy CSR.
 
@@ -212,21 +320,14 @@ half a second. What makes that work:
 
 ```bash
 pip install -e ".[dev]"
-pytest                                    # 350 tests, ~9s
-ruff check src tests scripts
-python examples/afl_diagnostics.py        # ratings, forecasts, alpha sweep, ROI
-python scripts/build_afl_dataset.py       # rebuild the bundled data from data-raw/
+pytest                                    # 474 tests, ~25s
+ruff check src tests scripts examples
+python examples/afl_tuning.py             # hyperparameter search
+python examples/afl_diagnostics.py        # ratings, forecasts, ROI
+python examples/afl_explore.py --plot out/
+python scripts/build_afl_dataset.py       # rebuild the bundled data
 ```
-
-## Relationship to the R package
-
-This replaces the R package that previously lived here; the R sources and
-`data/afl_matches_df.rda` remain only until the migration is signed off. The
-bundled Python dataset is byte-for-byte equivalent to the R `afl_matches_df`
-(same 2534 rows, same 12 columns, verified field by field), and
-`bscores.metrics` is a faithful port of `R/loss_functions.R`, tolerance-clipping
-behaviour included.
 
 ## Licence
 
-GPL-3.0-or-later, as the R package was.
+GPL-3.0-or-later.

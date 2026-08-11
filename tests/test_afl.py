@@ -168,21 +168,85 @@ class TestForecasting:
 
 
 class TestTuning:
-    def test_alpha_sweep_prefers_short_memory(self, afl):
-        from bscores import sweep_alpha
+    def test_search_prefers_a_shorter_memory_than_the_paper(self, afl):
+        from bscores.tuning import grid_search
 
-        rows = sweep_alpha(
+        search = grid_search(
             afl.home_team,
             afl.away_team,
             afl.outcome,
             afl.date,
-            [21.0, 365.0, 3650.0],
-            initial_train=0.5,
+            grid={"alpha": [21.0, 365.0, 3650.0]},
+            validation_start="2016-01-01",
+            validation_end="2019-01-01",
         )
         # A season of AFL is 22 rounds; form turns over much faster than the
         # 52-week tennis window the paper's alpha=365 mirrors.
-        assert rows[0]["alpha"] == 21.0
-        assert rows[-1]["alpha"] == 3650.0
+        assert search.best_params["alpha"] == 21.0
+        assert search.sensitivity("alpha")[-1][0] == 3650.0
+
+    def test_search_prefers_the_exponential_kernel(self, afl):
+        from bscores.tuning import grid_search
+
+        search = grid_search(
+            afl.home_team,
+            afl.away_team,
+            afl.outcome,
+            afl.date,
+            grid={"alpha": [21.0, 120.0, 365.0], "kernel": ["hyperbolic", "exponential"]},
+            validation_start="2016-01-01",
+            validation_end="2019-01-01",
+        )
+        # The hyperbolic tail keeps a decade of stale results alive; capping it
+        # or swapping the kernel is worth about 0.01 of log-loss.
+        assert search.best_params["kernel"] == "exponential"
+        profile = dict(search.sensitivity("kernel"))
+        assert profile["exponential"] < profile["hyperbolic"]
+
+    def test_capping_the_hyperbolic_tail_matches_the_exponential_kernel(self, afl):
+        from bscores.tuning import grid_search
+
+        search = grid_search(
+            afl.home_team,
+            afl.away_team,
+            afl.outcome,
+            afl.date,
+            grid={
+                "alpha": [120.0],
+                "kernel": ["hyperbolic", "exponential"],
+                "max_age": [None, 365.0],
+            },
+            validation_start="2016-01-01",
+            validation_end="2019-01-01",
+        )
+        scores = {
+            (row["kernel"], row["max_age"]): row["log_loss"] for row in search.rows
+        }
+        assert scores[("hyperbolic", 365.0)] < scores[("hyperbolic", None)]
+        assert scores[("hyperbolic", 365.0)] == pytest.approx(
+            scores[("exponential", None)], abs=0.005
+        )
+
+    def test_margin_weighting_helps(self, afl):
+        from bscores.tuning import grid_search
+        from bscores.weights import margin_weight
+
+        options = {
+            "uniform": np.ones(len(afl)),
+            "mov": margin_weight(afl.margin, scheme="linear", scale=24.0, cap=3.0),
+        }
+        search = grid_search(
+            afl.home_team,
+            afl.away_team,
+            afl.outcome,
+            afl.date,
+            grid={"alpha": [120.0], "kernel": ["exponential"], "weights": ["uniform", "mov"]},
+            weight_options=options,
+            validation_start="2016-01-01",
+            validation_end="2019-01-01",
+        )
+        profile = dict(search.sensitivity("weights"))
+        assert profile["mov"] < profile["uniform"]
 
     def test_longer_memory_is_smoother(self, afl):
         short = BScoreModel(alpha=30.0)

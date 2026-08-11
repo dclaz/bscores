@@ -10,6 +10,10 @@ The B-scores themselves need no such loop — they are a causal function of the
 results that precede each match, so they are computed once for the whole fixture
 list.  Only the logit coefficients are re-estimated, which is what makes the
 back-test cheap enough to sweep over ``alpha``.
+
+For choosing hyperparameters, reach for :mod:`bscores.tuning` rather than
+running this repeatedly and keeping the best: picking a setting on the same
+matches you then report on inflates the result by however hard you searched.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from ._time import as_days
 from .calibration import LogitCalibrator, Transform
 from .models import BScoreModel
 
-__all__ = ["BacktestResult", "rolling_forecast", "sweep_alpha"]
+__all__ = ["BacktestResult", "rolling_forecast", "walk_forward"]
 
 
 @dataclass
@@ -86,6 +90,33 @@ class BacktestResult:
             p = np.clip(self.probability, DEFAULT_TOL, 1.0 - DEFAULT_TOL)
             return -(self.outcome * np.log(p) + (1.0 - self.outcome) * np.log(1.0 - p))
         raise ValueError(f"unknown loss {kind!r}")
+
+    def between(self, start: Any = None, end: Any = None) -> BacktestResult:
+        """Restrict the forecasts to a time window, ``[start, end)``.
+
+        Either bound may be ``None`` for open-ended.  Used to score a validation
+        period separately from a test period without re-running the sweep.
+        """
+        keep = np.ones(self.times.size, dtype=bool)
+        if start is not None:
+            keep &= self.times >= float(as_days(start))
+        if end is not None:
+            keep &= self.times < float(as_days(end))
+        if not keep.any():
+            raise ValueError(f"no forecasts fall in [{start}, {end})")
+        return BacktestResult(
+            times=self.times[keep],
+            home=self.home[keep],
+            away=self.away[keep],
+            outcome=self.outcome[keep],
+            probability=self.probability[keep],
+            home_score=self.home_score[keep],
+            away_score=self.away_score[keep],
+            train_size=self.train_size[keep],
+            coefficients=self.coefficients,
+            refit_at=self.refit_at,
+            model=self.model,
+        )
 
     def to_frame(self):  # pragma: no cover - thin pandas adapter
         """Return the forecasts as a ``pandas.DataFrame``."""
@@ -210,26 +241,12 @@ def rolling_forecast(
             f"initial_train leaves no matches to forecast ({start} of {n} used for training)"
         )
 
-    probability = np.empty(n - start, dtype=np.float64)
-    train_size = np.empty(n - start, dtype=np.int64)
-    coefficients: list[np.ndarray] = []
-    refit_at: list[int] = []
-
     calibrator = LogitCalibrator(
         fit_intercept=fit_intercept, symmetric=symmetric, transform=transform, ridge=ridge
     )
-    cursor = start
-    while cursor < n:
-        stop = min(cursor + refit_every, n)
-        calibrator.fit(home_scores[:cursor], away_scores[:cursor], results[:cursor])
-        assert calibrator.beta_ is not None
-        coefficients.append(calibrator.beta_.copy())
-        refit_at.append(cursor - start)
-        probability[cursor - start : stop - start] = calibrator.predict_proba(
-            home_scores[cursor:stop], away_scores[cursor:stop]
-        )
-        train_size[cursor - start : stop - start] = cursor
-        cursor = stop
+    probability, train_size, coefficients, refit_at = walk_forward(
+        home_scores, away_scores, results, start, refit_every=refit_every, calibrator=calibrator
+    )
 
     engine.calibrator = calibrator
     return BacktestResult(
@@ -241,43 +258,73 @@ def rolling_forecast(
         home_score=home_scores[start:],
         away_score=away_scores[start:],
         train_size=train_size,
-        coefficients=np.array(coefficients),
-        refit_at=np.array(refit_at, dtype=np.int64),
+        coefficients=coefficients,
+        refit_at=refit_at,
         model=engine if keep_model else None,
     )
 
 
-def sweep_alpha(
-    home: Sequence[str],
-    away: Sequence[str],
-    outcome: Any,
-    times: Any,
-    alphas: Sequence[float],
+def walk_forward(
+    home_score: np.ndarray,
+    away_score: np.ndarray,
+    outcome: np.ndarray,
+    start: int,
     *,
-    metric: str = "log_loss",
-    **kwargs: Any,
-) -> list[dict[str, float]]:
-    """Back-test across a grid of memory parameters.
+    refit_every: int = 300,
+    calibrator: LogitCalibrator | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Run the expanding-window refit loop over pre-computed ratings.
 
-    The paper flags the choice of ``alpha`` as open ("worthy of investigation"),
-    and this is the cheap way to answer it for a given competition: every
-    ``alpha`` is a fresh causal sweep, evaluated strictly out of sample.
+    Split out from :func:`rolling_forecast` because the ratings are the
+    expensive half and the refit loop is the cheap one: a sweep over calibration
+    settings can reuse one causal rating pass for every variant it tries.
+
+    Parameters
+    ----------
+    home_score, away_score
+        Causal ratings for each fixture, from
+        :meth:`~bscores.BScoreModel.match_scores`.
+    outcome
+        Results on the ``{0, 0.5, 1}`` scale, same order.
+    start
+        Index of the first match to forecast; everything before it is the
+        initial training window.
+    refit_every
+        Matches forecast between refits.
+    calibrator
+        Fitted in place, so it holds the final coefficients on return.  A
+        default :class:`~bscores.calibration.LogitCalibrator` is used when
+        omitted.
 
     Returns
     -------
-    list[dict]
-        One row per ``alpha``, sorted best-first on ``metric``, each holding the
-        full metric set.
+    tuple
+        ``(probability, train_size, coefficients, refit_at)``.
     """
-    rows: list[dict[str, float]] = []
-    for alpha in alphas:
-        result = rolling_forecast(
-            home, away, outcome, times, alpha=float(alpha), keep_model=False, **kwargs
+    n = outcome.size
+    if not 0 < start < n:
+        raise ValueError(f"start must lie in (0, {n}), got {start}")
+    if refit_every < 1:
+        raise ValueError("refit_every must be at least 1")
+    if calibrator is None:
+        calibrator = LogitCalibrator()
+
+    probability = np.empty(n - start, dtype=np.float64)
+    train_size = np.empty(n - start, dtype=np.int64)
+    coefficients: list[np.ndarray] = []
+    refit_at: list[int] = []
+
+    cursor = start
+    while cursor < n:
+        stop = min(cursor + refit_every, n)
+        calibrator.fit(home_score[:cursor], away_score[:cursor], outcome[:cursor])
+        assert calibrator.beta_ is not None
+        coefficients.append(calibrator.beta_.copy())
+        refit_at.append(cursor - start)
+        probability[cursor - start : stop - start] = calibrator.predict_proba(
+            home_score[cursor:stop], away_score[cursor:stop]
         )
-        row = {"alpha": float(alpha)}
-        row.update(result.metrics())
-        rows.append(row)
-    if metric not in rows[0]:
-        raise ValueError(f"unknown metric {metric!r}")
-    reverse = metric == "accuracy"
-    return sorted(rows, key=lambda r: r[metric], reverse=reverse)
+        train_size[cursor - start : stop - start] = cursor
+        cursor = stop
+
+    return probability, train_size, np.array(coefficients), np.array(refit_at, dtype=np.int64)
