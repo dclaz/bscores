@@ -1,10 +1,16 @@
-.Rproj.user
-.Rhistory
-.RData
-.Ruserdata
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# scratch
 resources
 temp
-inst/doc
-doc
-Meta
-docs

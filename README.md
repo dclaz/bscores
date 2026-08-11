@@ -1,7 +1,528 @@
 # bscores
-An R implementation for calculating [B-scores](https://link.springer.com/article/10.1007/s10479-022-04594-7), a method for predicting the outcome of pairwise comparisons of agents based on the eigenvector centrality.
 
->  In this framework, every new match serves to update the full network, rather than
-only the ratings of the players involved.
+**Rate and forecast pairwise contests using the eigenvector centrality of the
+network of results.**
 
-Arcagni, A., Candila, V. & Grassi, R. A new model for predicting the winner in tennis based on the eigenvector centrality. Ann Oper Res (2022). https://doi.org/10.1007/s10479-022-04594-7
+`bscores` gives you a rating for every competitor in a competition, a calibrated
+probability for any match you care to ask about, and the tooling to check
+whether those probabilities are any good — back-testing, hyperparameter search,
+diagnostics, season simulation and plots. It works on anything decided by
+head-to-head results: sports leagues, tournaments, chess, esports, A/B contests.
+
+**The method.** Every result becomes an arrow in a directed network, pointing
+from the loser to the winner and weighted by how recently the match was played.
+A competitor's rating — its *B-score* — is its entry in the principal
+eigenvector of that network, which makes the rating recursive: your rating is
+high when the competitors you have beaten are themselves highly rated. Because
+every rating depends on every other, a single result updates the entire
+competition, including competitors who did not play. Probabilities come from a
+logistic regression on the two ratings.
+
+This is a Python implementation of:
+
+> Arcagni, A., Candila, V. & Grassi, R. (2023). *A new model for predicting the
+> winner in tennis based on the eigenvector centrality.* Annals of Operations
+> Research 325, 615–632. <https://doi.org/10.1007/s10479-022-04594-7>
+
+Not yet on PyPI — install from the repository:
+
+```bash
+pip install "git+https://github.com/dclaz/bscores@claude/bscores-python-impl-dsbd3i"
+```
+
+```python
+from bscores import BScoreModel
+from bscores.datasets import load_afl
+
+afl = load_afl(as_frame=False)                      # 3533 AFL matches, 2009-2026
+model = BScoreModel(alpha=120.0, kernel="exponential")
+model.fit(afl.home_team, afl.away_team, afl.outcome, afl.date)
+
+model.leaderboard(top=3)
+# [Rating(name='Fremantle', score=0.4059, matches=395, rank=1),
+#  Rating(name='Geelong',   score=0.3346, matches=419, rank=2),
+#  Rating(name='Hawthorn',  score=0.3126, matches=406, rank=3)]
+
+model.predict_win([["Fremantle"], ["Richmond"]])    # [0.944, 0.056]
+```
+
+New to the method? **[TUTORIAL.md](TUTORIAL.md)** walks through the whole
+package end to end — rating, forecasting, tuning, diagnostics and every plot —
+against the bundled data.
+
+---
+
+## The idea in more detail
+
+Most rating systems treat a match as a private transaction: two competitors
+play, their two ratings move, everyone else's stay put. B-scores treat the whole
+competition as one object.
+
+Formally, the network at time $t$ collects every past result, each decayed by
+its age (Eq. 1 of the paper). Writing $L_s$ for the matrix of losses recorded at
+time $s$, and $f$ for the decay kernel:
+
+$$W_t = \sum_{s \le t} f(s, t, \alpha) \, L_s$$
+
+The ratings are then the principal eigenvector of its transpose (Eq. 11), where
+$\rho$ is the spectral radius:
+
+$$x = \frac{1}{\rho} \, W_t' \, x, \qquad \lVert x \rVert_2 = 1$$
+
+Reading that equation on this network — where an arrow points from loser to
+winner — says a competitor scores highly when the competitors *pointing at* it
+score highly, which is to say when it beats strong opponents.
+
+The recursion has a consequence worth pausing on. Because every rating depends
+on every other, **a new result moves everybody** — including competitors who
+were nowhere near the match:
+
+```python
+model = BScoreModel(alpha=365.0)
+for winner, loser, when in [("a", "b", "2021-03-01"), ("b", "c", "2021-03-08"),
+                            ("c", "a", "2021-03-15"), ("a", "c", "2021-03-22"),
+                            ("b", "a", "2021-03-29")]:
+    model.rate_result(winner, loser, at=when)
+
+model.rating("c").score        # 0.3979
+model.rate_result("b", "a", at="2021-04-05")   # c is not in this match
+model.rating("c").score        # 0.2963
+```
+
+`c`'s rating fell by a quarter without taking the field. Its one win was over
+`a`, and `a` just lost again — so that win is now worth less. Elo, Glicko and
+Bradley-Terry would all have left `c` untouched. This is the property the method
+exists for, and it is why ratings are computed by solving the network rather
+than by updating a pair of numbers.
+
+---
+
+## A tour of the module
+
+### Rating
+
+The API follows [openskill.py](https://github.com/vivekjoshy/openskill.py), so
+if you have code built on a rating system you can usually swap the import.
+
+```python
+from bscores import BScoreModel
+
+model = BScoreModel(alpha=365.0)          # a result halves in weight after a year
+
+model.rate([["Geelong"], ["Carlton"]], at="2021-03-18")   # teams, best first
+model.rate_result("Carlton", "Essendon", at="2021-03-25") # or winner/loser
+model.add_matches(home, away, outcome, dates)             # or a whole fixture list
+
+model.rating("Geelong")            # Rating(name='Geelong', score=..., matches=2)
+model.leaderboard(top=5)
+model.predict_win([["Geelong"], ["Carlton"]])
+model.predict_rank([["Geelong"], ["Carlton"], ["Essendon"]])
+```
+
+A `Rating` carries `.score` — an entry in a unit-norm vector, so always in
+$[0, 1]$ — plus `.matches`, `.wins` and `.ordinal()` for a friendlier display
+scale. Multi-member teams, explicit `ranks`, draws and per-result weights are
+all supported; the docstrings have the details.
+
+### Forecasting
+
+The paper does not read a probability straight off two centralities. It fits a
+logit on them (Eq. 3):
+
+$$p_{i,j} = \frac{\exp(\beta_0 + \beta_1 x_i + \beta_2 x_j)}
+{1 + \exp(\beta_0 + \beta_1 x_i + \beta_2 x_j)}$$
+
+Leaving $\beta_1$ and $\beta_2$ free, rather than forcing
+$\beta_2 = -\beta_1$, is what lets the intercept carry home advantage. On AFL
+data $\sigma(\beta_0) \approx 0.54$ against a 0.572 home win rate — most of the
+edge, with the remainder coming from the slopes not quite cancelling.
+
+```python
+model.fit(afl.home_team, afl.away_team, afl.outcome, afl.date)
+model.predict_win([["Melbourne"], ["Carlton"]])    # calibrated probability
+```
+
+`fit` ingests the fixtures and calibrates in one pass. Every feature it
+calibrates on is computed **causally** — each match sees only results that
+happened strictly before it — so ingesting first cannot leak future information
+backwards.
+
+### Evaluating
+
+`rolling_forecast` runs the paper's protocol: fit on everything up to a cut-off,
+forecast the next block, fold it in, refit, repeat.
+
+```python
+from bscores import rolling_forecast
+
+result = rolling_forecast(
+    afl.home_team, afl.away_team, afl.outcome, afl.date,
+    model=BScoreModel(alpha=120.0, kernel="exponential"),
+    initial_train="2023-01-01", refit_every=300,
+)
+result.metrics()     # {'log_loss': 0.5910, 'brier_score': 0.2011, 'accuracy': 0.6606, ...}
+result.to_frame()    # per-match forecasts, ratings and training-set sizes
+```
+
+### Tuning
+
+`alpha` — how fast results are forgotten — is the parameter that matters most,
+and the right value depends on how fast form turns over in your competition.
+The paper uses 365 days to mirror the 52-week ATP/WTA ranking window; an AFL
+season is 22 rounds, and the data prefers something different.
+
+`grid_search` searches on a validation window and `refit_best` reports on a test
+window the search never saw, so the number you quote is not the number you
+optimised:
+
+```python
+from bscores.tuning import grid_search, refit_best
+
+search = grid_search(
+    afl.home_team, afl.away_team, afl.outcome, afl.date,
+    grid={"alpha": [30.0, 60.0, 120.0, 365.0], "kernel": ["hyperbolic", "exponential"]},
+    validation_start="2019-01-01", validation_end="2023-01-01",
+)
+search.best_params            # {'alpha': 120.0, 'kernel': 'exponential'}
+search.sensitivity("alpha")   # how much does this knob actually matter?
+
+held_out = refit_best(
+    afl.home_team, afl.away_team, afl.outcome, afl.date,
+    search.best_params, test_start="2023-01-01",
+)
+```
+
+```
+2009-06 .. 2018-09   warm-up      1922 matches, the model builds a history
+2019-03 .. 2022-09   validation    783 matches, the search runs here
+2023-03 .. 2026-08   test          828 matches, reported once at the end
+```
+
+Searching is cheaper than it looks: settings that differ only in how the logit
+is fitted share one causal rating pass with their siblings, so a 480-point grid
+costs 120 rating sweeps rather than 480.
+
+### Understanding a rating
+
+Because a rating *is* the weighted sum of the ratings pointing at it, it
+decomposes exactly — no attribution heuristic involved:
+
+```python
+from bscores.diagnostics import explain_rating
+
+for part in explain_rating(model, "Fremantle", top=4):
+    print(f"{part.opponent:<18} {part.share:>6.1%}  (they rate {part.opponent_score:.3f})")
+
+# Western Bulldogs   16.9%  (they rate 0.245)
+# Sydney             10.7%  (they rate 0.312)
+# Geelong            10.0%  (they rate 0.335)
+# Hawthorn            8.6%  (they rate 0.313)
+```
+
+Each row is a competitor Fremantle has beaten, weighted by how recently and by
+how highly that competitor is itself rated — so a win over Geelong contributes
+more per match than one over the Bulldogs, even though the Bulldogs have been
+beaten more often. The shares sum to 1 across all opponents.
+
+Other diagnostics answer the questions that usually come next:
+
+| question | function |
+| --- | --- |
+| Are the probabilities honest? | `calibration_curve`, `reliability_table` |
+| Does the model ever commit? | `sharpness`, `upset_rate` |
+| Is the network dense enough to rate on? | `network_summary` |
+| How much does the order move? | `rating_churn` |
+| Who has the wood on whom? | `head_to_head` |
+
+### Simulating
+
+```python
+from bscores.simulation import simulate_season
+
+season = simulate_season(model, home_fixtures, away_fixtures, n_simulations=20_000)
+season.top_n_probability(4)     # {'Fremantle': 0.867, 'Sydney': 0.728, ...}
+season.expected_points()
+season.position_distribution("Geelong")
+```
+
+### Plotting
+
+Installing with the `plot` extra (see below) adds `plot_ratings`, `plot_calibration`,
+`plot_tuning`, `plot_network`, `plot_backtest` and `plot_decay`. Each takes an
+optional `ax` and returns it, so they compose into a dashboard.
+
+```python
+from bscores.plotting import plot_ratings
+
+plot_ratings(history, top=6, x="round", schedule=afl)
+```
+
+`x="round"` is worth knowing about for a seasonal competition. On a calendar
+axis every summer is a flat line through an off-season in which nothing
+happened, and across seventeen seasons those gaps take up more width than the
+matches do. Plotting against playing rounds puts the seasons side by side.
+`bscores.schedule` recovers the rounds from the fixture list itself — a round is
+a maximal run of matches in which no competitor plays twice, which handles byes,
+split rounds and finals without a fixture template.
+
+### From the command line
+
+```bash
+bscores info
+bscores rate     --data afl --alpha 120 --kernel exponential --top 10
+bscores forecast --data results.csv --initial-train 2023-01-01
+bscores tune     --data afl --validation-start 2019-01-01 --validation-end 2023-01-01
+bscores simulate --data afl --simulations 20000
+```
+
+`--data afl` uses the bundled archive; anything else is read as a CSV
+(`--home-col`, `--away-col`, `--outcome-col`, `--date-col` if your headers
+differ). `--format json` on any subcommand gives machine-readable output.
+
+---
+
+## A worked example, end to end
+
+`python examples/afl_tuning.py` runs the grid search above, and
+`python examples/afl_optuna.py` runs a Bayesian one over a richer space. Both
+score their winner once on 2023–2026:
+
+| model | log-loss | Brier | accuracy |
+| --- | ---: | ---: | ---: |
+| B-score, TPE-tuned (α = 112, exponential, log, MoV-linear) | **0.5775** | **0.1960** | 0.6800 |
+| Elo, TPE-tuned (home advantage 55, K 50, spread 455) | 0.5809 | 0.1985 | **0.6836** |
+| B-score, grid-tuned (α = 120, exponential, sqrt, MoV) | 0.5853 | 0.1993 | 0.6703 |
+| Elo, grid-tuned (home advantage 45, K scale 400, K power 0.4) | 0.5817 | 0.1987 | 0.6848 |
+| Elo, paper defaults (no home advantage, K scale 250) | 0.6012 | 0.2062 | 0.6570 |
+| B-score, paper defaults (α = 365, hyperbolic) | 0.6348 | 0.2201 | 0.6244 |
+| home-ground base rate | 0.6808 | 0.2417 | 0.5749 |
+
+Every tuned row chose its hyperparameters on the 2019–2022 validation window
+and was scored once here. The TPE rows come from `bscores.search`, 600 trials
+each with 120 random warm-up trials, the same sampler on both sides.
+
+**Tuning matters more than the choice of method.** The spread between a tuned
+and an untuned model is 0.02–0.06 of log-loss; the spread between the two tuned
+models is 0.004, and Diebold-Mariano cannot separate them (−0.73, p = 0.47).
+Note also that a richer search space helps the B-score model more than it helps
+Elo — 600 TPE trials moved B-scores from 0.5853 to 0.5775 but Elo only from
+0.5817 to 0.5809, because Elo has three knobs and the B-score model has nine.
+
+The tuned B-score settings —
+
+```python
+{"alpha": 120.0, "kernel": "exponential", "transform": "sqrt",
+ "regularization": 0.03, "weights": "mov"}      # bscores.tuning.AFL_TUNED
+```
+
+— were also what an earlier search picked on the shorter 2009–2022 archive with
+a *disjoint* validation window, which is a reassuring sign they describe the
+competition rather than the sample. Elo's came from `tune_elo` over the same
+window: `home_advantage=45, k_scale=400, k_power=0.4`.
+
+Giving Elo a home-advantage term is what makes the comparison fair rather than
+generous. A B-score model picks up home advantage for free — the calibrating
+logit fits an intercept, and on a home/away competition that intercept *is* the
+home edge — whereas the paper's Elo (Eqs. 4–5) has no such term and must be told.
+Comparing a searched B-score model against a default Elo measures the search,
+not the rating method:
+
+```python
+from bscores import Elo, tune_elo
+
+params = tune_elo(afl.home_team, afl.away_team, afl.outcome, afl.date,
+                  validation_start="2019-01-01", validation_end="2023-01-01")
+Elo(**params).run(afl.home_team, afl.away_team, afl.outcome)
+```
+
+What each knob is worth, moving it one at a time around the TPE optimum on the
+validation window:
+
+| knob | best | worst tried | span |
+| --- | ---: | ---: | ---: |
+| `alpha` | 0.6117 @ 112 d | 0.6712 @ 1000 d | **0.060** |
+| `kernel` | 0.6117 exponential | 0.6484 hyperbolic | **0.037** |
+| `regularization` | 0.6117 @ 0.46 | 0.6211 @ 0 | 0.009 |
+| margin weighting on/off | 0.6117 on | 0.6184 off | 0.007 |
+| `margin_cap` | 0.6113 @ 6.0 | 0.6165 @ 1.5 | 0.005 |
+| `margin_scale` | 0.6117 @ 24 | 0.6153 @ 6 | 0.004 |
+| `transform` | 0.6117 log | 0.6148 identity | 0.003 |
+| `margin_scheme` | 0.6117 linear | 0.6132 sqrt | 0.002 |
+| `draw_weight` | 0.6114 @ 1.0 | 0.6120 @ 0 | 0.001 |
+| `symmetric` | 0.6117 False | 0.6119 True | 0.000 |
+
+`alpha` and `kernel` together span 0.10 of log-loss; everything else put
+together spans about 0.02. Both ask the same question — how long a result stays
+informative — once as a half-life and once as a tail shape.
+
+Four things this brings out:
+
+**The decay kernel's tail matters more than its shape.** The paper's hyperbolic
+kernel is heavy-tailed: at α = 365 a decade-old result still carries weight
+0.09, and a long archive holds thousands of them. Truncating it —
+`Hyperbolic(60)` with `max_age=730` — scores 0.6232, essentially matching the
+exponential kernel's 0.6246, where the untruncated version manages 0.6357.
+Shortening `alpha` alone does not substitute, because that also discards useful
+recent history. `plot_decay` makes the difference visible.
+
+**A sensitivity profile only sees inside the range you searched.** The grid
+offered `regularization` up to 0.03 and duly reported it as marginal. That was
+true of the grid, not of the parameter: given room, the search settles on 0.46.
+If a parameter's best value sits at the edge of the range you gave it, widen the
+range before believing the verdict — though see the tutorial for what happened
+when we did, which is its own lesson about validation windows.
+
+**How much a result counts is a real modelling choice, but a second-order one.**
+Turning margin weighting on is worth 0.007 of log-loss against the 0.037 the
+kernel choice is worth — real, and free, but not where the leverage is.
+`bscores.weights` provides `margin_weight` and `importance_weight`.
+
+**The gains are worth testing for significance.** A Diebold-Mariano test[^dm]
+against the TPE-tuned B-score model returns −7.43 versus the base rate
+(p &lt; 0.0001) and −5.24 versus the paper's B-score defaults (p &lt; 0.0001) —
+both emphatic. Against a TPE-tuned Elo it returns −0.73 (p = 0.47): nominally
+ahead, nowhere near separable on 828 matches.
+
+So the defensible claim on this data is not that B-scores beat Elo. It is that
+B-scores reach Elo-class accuracy from a completely different construction, and
+that searching the hyperparameters is worth far more than choosing between the
+two methods.
+
+[^dm]: The [Diebold-Mariano test](https://doi.org/10.1080/07350015.1995.10524599)
+    asks whether two forecasters differ in accuracy by more than sampling noise.
+    Rather than compare two summary numbers, it works with the *per-match* loss
+    difference $d_i = L(\text{model A}_i) - L(\text{model B}_i)$ over the same
+    test set and tests $H_0: \mathbb{E}[d] = 0$. The statistic is
+    $\bar{d} / \mathrm{se}(\bar{d})$, asymptotically standard normal, with
+    negative values favouring model A. The standard error comes from the
+    long-run variance of $d$, which for the one-step-ahead forecasts used here
+    needs no autocovariance lags; multi-step forecasts add them, and
+    `bscores.metrics.diebold_mariano` takes a `horizon` argument for that. It
+    also applies the Harvey-Leybourne-Newbold small-sample correction by
+    default. Pairing the losses match by match is what gives the test its
+    power: both models face identical fixtures, so the common difficulty of any
+    given match cancels. That matters here because 828 matches is not many — a
+    0.016 log-loss gap can easily be luck, and this is what separates the two
+    cases. `BacktestResult.losses()` produces the per-match series it consumes.
+
+Two more scripts round out the tour: `examples/afl_explore.py` walks through the
+diagnostics and writes the figures, and `examples/benchmark.py` measures
+throughput.
+
+---
+
+## What is in the box
+
+| module | what it holds |
+| --- | --- |
+| `bscores.models` | `BScoreModel`, `Rating`, `RatingHistory` — the API you use |
+| `bscores.network` | `LossNetwork`: dated results in, $W_t$ out (Eq. 1) |
+| `bscores.centrality` | `bonacich_centrality` (Eq. 11), solvers, `neumann_centrality` |
+| `bscores.decay` | `Hyperbolic` (Eq. 2), `Exponential`, `Uniform`, `Window` |
+| `bscores.weights` | `margin_weight`, `importance_weight` |
+| `bscores.calibration` | `LogitCalibrator` (Eq. 3), `fit_logistic` — IRLS, numpy only |
+| `bscores.metrics` | `log_loss`, `brier_score`, `accuracy`, `diebold_mariano` |
+| `bscores.backtest` | `rolling_forecast`, `walk_forward` |
+| `bscores.tuning` | `grid_search`, `refit_best`, `AFL_TUNED` |
+| `bscores.search` | `optuna_search` over a conditional space (optional extra) |
+| `bscores.diagnostics` | `explain_rating`, calibration, network health, churn |
+| `bscores.simulation` | `simulate_season` |
+| `bscores.schedule` | `infer_seasons`, `infer_rounds` |
+| `bscores.plotting` | matplotlib figures (optional extra) |
+| `bscores.baselines` | `Elo` and `tune_elo`, for a fair comparison |
+| `bscores.datasets` | `load_afl` — 3533 AFL matches, 2009–2026, bundled |
+
+`numpy` is the only hard requirement. `pandas` powers the DataFrame adapters,
+`scipy` the sparse path for thousands of competitors, `matplotlib` the figures,
+`optuna` the Bayesian search — all optional, all imported lazily.
+
+```bash
+REPO="git+https://github.com/dclaz/bscores@claude/bscores-python-impl-dsbd3i"
+
+pip install "$REPO"                   # numpy only
+pip install "bscores[all] @ $REPO"    # + pandas, scipy, matplotlib, optuna
+pip install "bscores[tune] @ $REPO"   # + optuna, for bscores.search
+pip install "bscores[dev] @ $REPO"    # + pytest, ruff, mypy
+```
+
+Or clone and work in place, which is what the development commands below
+assume:
+
+```bash
+git clone -b claude/bscores-python-impl-dsbd3i https://github.com/dclaz/bscores
+cd bscores && pip install -e ".[all]"
+```
+
+Once the package is released to PyPI these all become plain
+`pip install bscores`; the release workflow that publishes it is already in
+`.github/workflows/release.yml`, waiting on a `v*` tag.
+
+---
+
+## Implementation notes
+
+**Causality is enforced.** `score_history`, `match_scores`, `predict_proba`,
+`rolling_forecast` and `grid_search` all evaluate the network with
+`inclusive=False`: a rating used to forecast a match at time *t* is built only
+from results strictly before *t*, so fixtures in the same round cannot see each
+other. The test suite rewrites the second half of a fixture list and asserts the
+first half's forecasts do not move.
+
+**Degenerate networks have a defined answer.** Before anyone has beaten someone
+who beat someone else in a loop, the loss matrix is nilpotent: its spectral
+radius is zero and the eigenvector equation has no solution to find. Power
+iteration would crawl towards an arbitrary basis vector. `bonacich_centrality`
+tests for a cycle up front — one sparsity sweep, essentially free once a cycle
+exists — and falls back to a finite Neumann series that grades the same "beat
+strong opponents" idea and terminates in at most *n* steps. Which route ran is
+reported in `EigenResult.method`. Passing `regularization=ε` keeps the solve on
+the eigenvector throughout.
+
+**Speed.** `python examples/benchmark.py`:
+
+| competitors | matches | epochs | seconds |
+| ---: | ---: | ---: | ---: |
+| 18 | 2 500 | 1 795 | 0.9 |
+| 64 | 10 000 | 3 404 | 1.8 |
+| 128 | 25 000 | 3 648 | 2.9 |
+| 256 | 50 000 | 3 650 | 6.5 |
+
+An epoch is one distinct match date, and one centrality solve. The full AFL
+back-test — 3533 matches, roughly 2000 causal solves, six logit refits — takes
+about three quarters of a second. What makes that work:
+
+- $W_t$ is assembled with a scatter-add over a pre-sorted event array, so an
+  epoch costs one pass over history rather than a Python loop over it.
+- Repeated times are solved once and shared.
+- Each solve warm-starts from the previous epoch's eigenvector; consecutive
+  networks barely differ.
+- The power iteration runs shifted, so the bipartite-ish networks of an opening
+  round converge instead of oscillating.
+- Memoryless kernels (`Exponential`, `Uniform`) age the accumulator in place
+  rather than rebuilding it — exact, and roughly 30% faster on long histories.
+- `max_age` bounds the per-epoch work when a heavy kernel tail is not worth
+  paying for.
+- Networks above `dense_max_nodes` competitors switch to SciPy CSR.
+
+---
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest                                    # 532 tests
+ruff check src tests scripts examples
+mypy
+python examples/afl_tuning.py             # grid search, staged
+python examples/afl_optuna.py             # Bayesian search (needs the tune extra)
+python examples/afl_explore.py --plot out/
+python scripts/build_afl_dataset.py       # rebuild the bundled data
+```
+
+See [TUTORIAL.md](TUTORIAL.md) for a guided tour of the API,
+[CONTRIBUTING.md](CONTRIBUTING.md) for the conventions worth knowing, and
+[CHANGELOG.md](CHANGELOG.md) for what has changed.
+
+## Licence
+
+GPL-3.0-or-later.

@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check src tests scripts examples
+
+      - name: Types
+        run: mypy
+
+      - name: Test
+        run: pytest -q --cov --cov-report=term-missing
+
+      - name: Command line interface
+        run: |
+          bscores --version
+          bscores info
+          python -m bscores rate --data afl --alpha 120 --kernel exponential --top 5
+
+      - name: Numpy-only install still imports and rates
+        run: |
+          python -m venv /tmp/minimal
+          /tmp/minimal/bin/pip install --quiet --upgrade pip
+          /tmp/minimal/bin/pip install --quiet .
+          /tmp/minimal/bin/python -c "
+          import bscores
+          from bscores.datasets import load_afl
+          afl = load_afl(as_frame=False)
+          model = bscores.BScoreModel(alpha=21.0)
+          model.add_matches(afl.home_team, afl.away_team, afl.outcome, afl.date)
+          print(model.leaderboard(top=3))
+          "
+
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: AFL diagnostics
+        run: python examples/afl_diagnostics.py --alpha 120 --quick
+
+      - name: AFL hyperparameter search
+        run: python examples/afl_tuning.py --stage final
+
+      - name: AFL exploration
+        run: python examples/afl_explore.py --plot "$RUNNER_TEMP/figures"
