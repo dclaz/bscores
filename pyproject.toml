@@ -79,7 +79,10 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "NPY"]
 ignore = ["B905"]
 
 [tool.mypy]
-python_version = "3.10"
+# No python_version pin.  Pinning it makes mypy read the *installed* numpy stubs
+# under older syntax rules, and numpy >= 2.5 writes them with PEP 695 `type`
+# statements, which mypy then rejects outright.  Letting each matrix job check
+# against its own interpreter is better coverage anyway.
 files = ["src/bscores"]
 ignore_missing_imports = true
 warn_unused_ignores = true

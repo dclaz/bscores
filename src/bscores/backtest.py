@@ -209,8 +209,8 @@ def rolling_forecast(
     """
     home_names = np.asarray(list(home), dtype=object)
     away_names = np.asarray(list(away), dtype=object)
-    results = np.asarray(outcome, dtype=np.float64).ravel()
-    stamps = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
+    results: np.ndarray = np.asarray(outcome, dtype=np.float64).ravel()
+    stamps: np.ndarray = np.atleast_1d(as_days(times)).astype(np.float64, copy=False)
     n = home_names.size
     if not (away_names.size == results.size == stamps.size == n):
         raise ValueError(

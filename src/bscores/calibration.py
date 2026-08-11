@@ -142,7 +142,9 @@ def fit_logistic(
             raise ValueError(f"penalize must have shape ({n_features},), got {mask.shape}")
     ridge_diag = ridge * mask.astype(np.float64)
 
-    beta = np.zeros(n_features) if beta0 is None else np.array(beta0, dtype=np.float64).ravel()
+    beta: np.ndarray = (
+        np.zeros(n_features) if beta0 is None else np.array(beta0, dtype=np.float64).ravel()
+    )
     if beta.shape != (n_features,):
         raise ValueError(f"beta0 must have shape ({n_features},)")
 
@@ -303,7 +305,7 @@ class LogitCalibrator:
     @property
     def _penalize_mask(self) -> np.ndarray:
         n_slopes = 1 if self.symmetric else 2
-        mask = np.ones(n_slopes + self.n_extra_, dtype=bool)
+        mask: np.ndarray = np.ones(n_slopes + self.n_extra_, dtype=bool)
         if self.fit_intercept:
             mask = np.concatenate([[False], mask])
         return mask
